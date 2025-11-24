@@ -51,8 +51,8 @@ type MetroKey = keyof typeof METROS;
 interface MetroNetwork {
   netId: number;
   asn?: number;
-  name?: string;
-  ixCaps: Map<number, number>; // ix_id -> Mbps
+  name?: string; // PeeringDB net.name (organization)
+  ixCaps: Map<number, number>; // ix_id -> total capacity Mbps (0 = unknown)
   facIds: Set<number>;
 }
 
@@ -269,7 +269,7 @@ const PeeringDBDashboard: React.FC = () => {
     fetchOrgs();
   }, [facData]);
 
-  // Reset sort and selections when lastLoadedMetros change.
+  // Reset sort when metros change.
   useEffect(() => {
     setSortState({ key: "asn", direction: "asc" });
   }, [lastLoadedMetros]);
@@ -395,7 +395,7 @@ const PeeringDBDashboard: React.FC = () => {
 
           const speed = typeof row.speed === "number" ? row.speed : 0;
           const prev = entry.ixCaps.get(ixId) ?? 0;
-          entry.ixCaps.set(ixId, prev + (speed > 0 ? speed : 0));
+          entry.ixCaps.set(ixId, prev + (speed > 0 ? speed : 0)); // only sum positive speeds
         });
       }
 
@@ -938,20 +938,19 @@ const PeeringDBDashboard: React.FC = () => {
       >
         <div>
           <h2 style={{ margin: 0, fontSize: 20 }}>PeeringDB – Metro ASN × IX / Facility Matrix</h2>
-          <div style={{ fontSize: 12, color: theme.textMuted, marginTop: 4 }}>
+          <div style={{ fontSize: 13, color: theme.textMuted, marginTop: 4 }}>
             Metro selection (for next load): <strong>{metroLabel}</strong>
           </div>
         </div>
         <div
           style={{
-            fontSize: 12,
+            fontSize: 13,
             color: theme.textSoft,
             display: "flex",
-            flexWrap: "nowrap",
+            flexWrap: "wrap",
             gap: 6,
             justifyContent: "flex-end",
             maxWidth: "100%",
-            overflowX: "auto",
             paddingBottom: 4,
           }}
         >
@@ -990,12 +989,12 @@ const PeeringDBDashboard: React.FC = () => {
             borderRight: `1px solid ${theme.headerBorder}`,
             padding: 12,
             paddingRight: 10,
-            fontSize: 12,
+            fontSize: 13,
             overflowY: "auto",
             background: "#020617",
           }}
         >
-          {/* Summary box – visually subtle */}
+          {/* Summary box */}
           <div
             style={{
               marginBottom: 12,
@@ -1005,14 +1004,16 @@ const PeeringDBDashboard: React.FC = () => {
               border: `1px solid ${theme.cardBorder}`,
             }}
           >
-            <div style={{ fontSize: 11, color: theme.textMuted, marginBottom: 4 }}>Summary</div>
+            <div style={{ fontSize: 12, color: theme.textMuted, marginBottom: 4, fontWeight: 600 }}>
+              Summary
+            </div>
             <div>IXes in loaded metros: {ixData.length}</div>
             <div>Facilities in loaded metros: {facData.length}</div>
           </div>
 
           {/* Sidebar width control */}
           <div style={{ marginBottom: 12 }}>
-            <div style={{ fontSize: 11, color: theme.textMuted, marginBottom: 2 }}>
+            <div style={{ fontSize: 12, color: theme.textMuted, marginBottom: 2 }}>
               Sidebar width (px)
             </div>
             <input
@@ -1023,7 +1024,7 @@ const PeeringDBDashboard: React.FC = () => {
               onChange={(e) => setSidebarWidth(Number(e.target.value))}
               style={{ width: "100%" }}
             />
-            <div style={{ fontSize: 11, color: theme.textMuted, marginTop: 2 }}>
+            <div style={{ fontSize: 12, color: theme.textMuted, marginTop: 2 }}>
               {sidebarWidth}px
             </div>
           </div>
@@ -1063,12 +1064,12 @@ const PeeringDBDashboard: React.FC = () => {
           </button>
 
           {lastLoadedAt && (
-            <div style={{ fontSize: 11, color: theme.textMuted, marginBottom: 4 }}>
+            <div style={{ fontSize: 12, color: theme.textMuted, marginBottom: 4 }}>
               Last loaded: {lastLoadedAt.toLocaleString()}
             </div>
           )}
           {lastLoadedMetros.length > 0 && (
-            <div style={{ fontSize: 11, color: theme.textMuted, marginBottom: 10 }}>
+            <div style={{ fontSize: 12, color: theme.textMuted, marginBottom: 10 }}>
               Data currently loaded for: {loadedMetroLabel}
             </div>
           )}
@@ -1095,8 +1096,8 @@ const PeeringDBDashboard: React.FC = () => {
                 style={{
                   marginTop: 14,
                   marginBottom: 8,
-                  fontWeight: 600,
-                  fontSize: 12,
+                  fontWeight: 700,
+                  fontSize: 13,
                 }}
               >
                 Network filters
@@ -1154,13 +1155,13 @@ const PeeringDBDashboard: React.FC = () => {
                   marginBottom: 4,
                 }}
               />
-              <div style={{ fontSize: 11, color: theme.textMuted, marginBottom: 12 }}>
+              <div style={{ fontSize: 12, color: theme.textMuted, marginBottom: 12 }}>
                 Networks (filtered): {sortedNetworks.length} / {metroNetworks.length}
               </div>
 
               {/* IX filter */}
-              <div style={{ marginTop: 4, marginBottom: 4, fontWeight: 600 }}>IX columns</div>
-              <div style={{ fontSize: 11, color: theme.textMuted, marginBottom: 4 }}>
+              <div style={{ marginTop: 4, marginBottom: 4, fontWeight: 700 }}>IX columns</div>
+              <div style={{ fontSize: 12, color: theme.textMuted, marginBottom: 4 }}>
                 Filter by name, then select/deselect.
               </div>
               <input
@@ -1180,7 +1181,7 @@ const PeeringDBDashboard: React.FC = () => {
               <div style={{ display: "flex", gap: 6, marginBottom: 6 }}>
                 <button
                   type="button"
-                  style={{ flex: 1, fontSize: 11, padding: 6 }}
+                  style={{ flex: 1, fontSize: 12, padding: 6 }}
                   onClick={() =>
                     setSelectedIxIds(
                       ixOptions.map((ix) => ix.id).filter((id: any) => typeof id === "number")
@@ -1191,7 +1192,7 @@ const PeeringDBDashboard: React.FC = () => {
                 </button>
                 <button
                   type="button"
-                  style={{ flex: 1, fontSize: 11, padding: 6 }}
+                  style={{ flex: 1, fontSize: 12, padding: 6 }}
                   onClick={() => setSelectedIxIds([])}
                 >
                   None
@@ -1209,7 +1210,7 @@ const PeeringDBDashboard: React.FC = () => {
                 }}
               >
                 {ixOptions.map((ix) => (
-                  <label key={ix.id} style={{ display: "block", fontSize: 11, marginBottom: 2 }}>
+                  <label key={ix.id} style={{ display: "block", fontSize: 12, marginBottom: 2 }}>
                     <input
                       type="checkbox"
                       checked={selectedIxIds.includes(ix.id)}
@@ -1220,13 +1221,13 @@ const PeeringDBDashboard: React.FC = () => {
                   </label>
                 ))}
                 {ixOptions.length === 0 && (
-                  <div style={{ fontSize: 11, color: theme.textMuted }}>No IX match.</div>
+                  <div style={{ fontSize: 12, color: theme.textMuted }}>No IX match.</div>
                 )}
               </div>
 
               {/* Facility filter */}
-              <div style={{ marginTop: 4, marginBottom: 4, fontWeight: 600 }}>Facility columns</div>
-              <div style={{ fontSize: 11, color: theme.textMuted, marginBottom: 4 }}>
+              <div style={{ marginTop: 4, marginBottom: 4, fontWeight: 700 }}>Facility columns</div>
+              <div style={{ fontSize: 12, color: theme.textMuted, marginBottom: 4 }}>
                 Filter by name, then select/deselect.
               </div>
               <input
@@ -1246,7 +1247,7 @@ const PeeringDBDashboard: React.FC = () => {
               <div style={{ display: "flex", gap: 6, marginBottom: 6 }}>
                 <button
                   type="button"
-                  style={{ flex: 1, fontSize: 11, padding: 6 }}
+                  style={{ flex: 1, fontSize: 12, padding: 6 }}
                   onClick={() =>
                     setSelectedFacIds(
                       facOptions.map((fac) => fac.id).filter((id: any) => typeof id === "number")
@@ -1257,7 +1258,7 @@ const PeeringDBDashboard: React.FC = () => {
                 </button>
                 <button
                   type="button"
-                  style={{ flex: 1, fontSize: 11, padding: 6 }}
+                  style={{ flex: 1, fontSize: 12, padding: 6 }}
                   onClick={() => setSelectedFacIds([])}
                 >
                   None
@@ -1274,7 +1275,7 @@ const PeeringDBDashboard: React.FC = () => {
                 }}
               >
                 {facOptions.map((fac) => (
-                  <label key={fac.id} style={{ display: "block", fontSize: 11, marginBottom: 2 }}>
+                  <label key={fac.id} style={{ display: "block", fontSize: 12, marginBottom: 2 }}>
                     <input
                       type="checkbox"
                       checked={selectedFacIds.includes(fac.id)}
@@ -1285,7 +1286,7 @@ const PeeringDBDashboard: React.FC = () => {
                   </label>
                 ))}
                 {facOptions.length === 0 && (
-                  <div style={{ fontSize: 11, color: theme.textMuted }}>No facility match.</div>
+                  <div style={{ fontSize: 12, color: theme.textMuted }}>No facility match.</div>
                 )}
               </div>
             </>
@@ -1298,13 +1299,13 @@ const PeeringDBDashboard: React.FC = () => {
             flex: 1,
             padding: 12,
             overflow: "auto",
-            fontSize: 12,
+            fontSize: 13,
             display: "flex",
             flexDirection: "column",
             gap: 16,
           }}
         >
-          {/* PER-METRO SUMMARY CARDS – visually distinct */}
+          {/* PER-METRO SUMMARY CARDS */}
           {metroSummaries.length > 0 && (
             <div
               style={{
@@ -1355,7 +1356,7 @@ const PeeringDBDashboard: React.FC = () => {
                     </div>
                     <div
                       style={{
-                        fontSize: 18,
+                        fontSize: 20,
                         fontWeight: 700,
                         marginBottom: 4,
                         color: "#f9fafb",
@@ -1365,9 +1366,9 @@ const PeeringDBDashboard: React.FC = () => {
                     </div>
                     <div
                       style={{
-                        fontSize: 13,
+                        fontSize: 16,
                         color: theme.textSoft,
-                        fontWeight: 500,
+                        fontWeight: 600,
                       }}
                     >
                       {s.uniqueNets} unique networks
@@ -1401,12 +1402,14 @@ const PeeringDBDashboard: React.FC = () => {
                   <div style={{ fontSize: 11, color: theme.textMuted, textTransform: "uppercase" }}>
                     Section 1
                   </div>
-                  <h3 style={{ margin: 0, marginTop: 2 }}>ASN × IX – capacity in Gbps (green = present)</h3>
+                  <h3 style={{ margin: 0, marginTop: 2 }}>
+                    ASN × IX – capacity in Gbps (green = present)
+                  </h3>
                 </div>
                 <button
                   type="button"
                   style={{
-                    fontSize: 11,
+                    fontSize: 12,
                     padding: "6px 10px",
                     borderRadius: 9999,
                     border: `1px solid ${theme.cardBorder}`,
@@ -1432,7 +1435,7 @@ const PeeringDBDashboard: React.FC = () => {
                     width: "100%",
                     minWidth: ixTableMinWidth,
                     borderCollapse: "collapse",
-                    fontSize: 12,
+                    fontSize: 13,
                   }}
                 >
                   <thead>
@@ -1443,6 +1446,7 @@ const PeeringDBDashboard: React.FC = () => {
                           textAlign: "left",
                           cursor: "pointer",
                           minWidth: 80,
+                          fontWeight: 700,
                         }}
                         onClick={sortByAsn}
                       >
@@ -1459,6 +1463,7 @@ const PeeringDBDashboard: React.FC = () => {
                           whiteSpace: "nowrap",
                           overflow: "hidden",
                           textOverflow: "ellipsis",
+                          fontWeight: 700,
                         }}
                         onClick={sortByName}
                       >
@@ -1482,7 +1487,7 @@ const PeeringDBDashboard: React.FC = () => {
                               {ix.name}
                               {sortIndicator("ix", ix.id)}
                             </div>
-                            <div style={{ fontSize: 10, color: theme.textMuted }}>
+                            <div style={{ fontSize: 11, color: theme.textMuted }}>
                               {count} nets
                               {totalGbps > 0 ? ` • ${totalGbps.toFixed(1)} Gbps` : ""}
                             </div>
@@ -1501,7 +1506,9 @@ const PeeringDBDashboard: React.FC = () => {
                           borderBottom: `1px solid ${theme.gridBorder}`,
                         }}
                       >
-                        <td style={{ ...bodyCellBase, minWidth: 80 }}>{net.asn ?? "?"}</td>
+                        <td style={{ ...bodyCellBase, minWidth: 80, fontWeight: 600 }}>
+                          {net.asn ?? "?"}
+                        </td>
                         <td
                           style={{
                             ...bodyCellBase,
@@ -1511,6 +1518,7 @@ const PeeringDBDashboard: React.FC = () => {
                             whiteSpace: "nowrap",
                             overflow: "hidden",
                             textOverflow: "ellipsis",
+                            fontWeight: 600,
                           }}
                           title={net.name ?? ""}
                         >
@@ -1532,7 +1540,7 @@ const PeeringDBDashboard: React.FC = () => {
                                 fontWeight: present ? 600 : 400,
                               }}
                             >
-                              {present ? Math.round(capGbps * 10) / 10 : "–"}
+                              {present ? Math.round(capGbps) : "–"}
                             </td>
                           );
                         })}
@@ -1560,7 +1568,7 @@ const PeeringDBDashboard: React.FC = () => {
                   Section 2
                 </div>
                 <h3 style={{ margin: 0, marginTop: 2 }}>By capacity – stacked by IX (Gbps)</h3>
-                <div style={{ fontSize: 11, color: theme.textMuted, marginTop: 4 }}>
+                <div style={{ fontSize: 12, color: theme.textMuted, marginTop: 4 }}>
                   Total capacity across selected IX columns and networks:{" "}
                   <strong>{capacityStats.grandTotalGbps.toFixed(1)} Gbps</strong>
                 </div>
@@ -1573,7 +1581,7 @@ const PeeringDBDashboard: React.FC = () => {
                   flexWrap: "wrap",
                   gap: 10,
                   marginBottom: 8,
-                  fontSize: 11,
+                  fontSize: 12,
                   padding: 8,
                   borderRadius: 8,
                   border: `1px solid ${theme.cardBorder}`,
@@ -1625,18 +1633,18 @@ const PeeringDBDashboard: React.FC = () => {
                           marginBottom: 4,
                         }}
                       >
-                        <div style={{ fontSize: 12, maxWidth: "65%" }}>
+                        <div style={{ fontSize: 13, maxWidth: "65%" }}>
                           <strong>{net.asn}</strong>{" "}
                           <span style={{ color: theme.textMuted }}>{net.name}</span>
                         </div>
-                        <div style={{ fontSize: 11, whiteSpace: "nowrap", color: theme.textSoft }}>
+                        <div style={{ fontSize: 12, whiteSpace: "nowrap", color: theme.textSoft }}>
                           {totalGbps.toFixed(1)} Gbps ({share.toFixed(1)}%)
                         </div>
                       </div>
 
                       <div
                         style={{
-                          height: 28,
+                          height: 32,
                           background: "#020617",
                           borderRadius: 6,
                           overflow: "hidden",
@@ -1647,7 +1655,7 @@ const PeeringDBDashboard: React.FC = () => {
                         {segments.map((seg: CapacitySegment) => {
                           const widthPct = totalGbps > 0 ? (seg.gbps / totalGbps) * 100 : 0;
                           const pctOfNet = totalGbps > 0 ? (seg.gbps / totalGbps) * 100 : 0;
-                          const label = `${seg.gbps.toFixed(0)} (${pctOfNet.toFixed(0)}%)`;
+                          const label = `${Math.round(seg.gbps)} (${pctOfNet.toFixed(0)}%)`;
 
                           return (
                             <div
@@ -1661,10 +1669,12 @@ const PeeringDBDashboard: React.FC = () => {
                                 display: "flex",
                                 alignItems: "center",
                                 justifyContent: "center",
-                                fontSize: 12,
+                                fontSize: widthPct < 8 ? 10 : 12,
                                 color: "#f9fafb",
                                 fontWeight: 700,
-                                whiteSpace: "nowrap",
+                                whiteSpace: "normal",
+                                textAlign: "center",
+                                padding: "0 2px",
                                 borderRight: `1px solid ${theme.gridBorder}`,
                                 textShadow: "0 1px 2px rgba(0,0,0,0.85)",
                               }}
@@ -1711,7 +1721,7 @@ const PeeringDBDashboard: React.FC = () => {
                 <button
                   type="button"
                   style={{
-                    fontSize: 11,
+                    fontSize: 12,
                     padding: "6px 10px",
                     borderRadius: 9999,
                     border: `1px solid ${theme.cardBorder}`,
@@ -1737,7 +1747,7 @@ const PeeringDBDashboard: React.FC = () => {
                     width: "100%",
                     minWidth: facTableMinWidth,
                     borderCollapse: "collapse",
-                    fontSize: 12,
+                    fontSize: 13,
                   }}
                 >
                   <thead>
@@ -1748,6 +1758,7 @@ const PeeringDBDashboard: React.FC = () => {
                           textAlign: "left",
                           minWidth: 80,
                           cursor: "pointer",
+                          fontWeight: 700,
                         }}
                         rowSpan={2}
                         onClick={sortByAsn}
@@ -1762,6 +1773,7 @@ const PeeringDBDashboard: React.FC = () => {
                           maxWidth: nameColWidth,
                           width: nameColWidth,
                           cursor: "pointer",
+                          fontWeight: 700,
                         }}
                         rowSpan={2}
                         onClick={sortByName}
@@ -1778,7 +1790,7 @@ const PeeringDBDashboard: React.FC = () => {
                           colSpan={g.facilities.length || 1}
                         >
                           <div>{g.org}</div>
-                          <div style={{ fontSize: 10, color: theme.textMuted }}>
+                          <div style={{ fontSize: 11, color: theme.textMuted }}>
                             {g.totalNetworks} nets
                           </div>
                         </th>
@@ -1800,7 +1812,7 @@ const PeeringDBDashboard: React.FC = () => {
                               }}
                             >
                               <div>{f.fac.name}</div>
-                              <div style={{ fontSize: 10, color: theme.textMuted }}>
+                              <div style={{ fontSize: 11, color: theme.textMuted }}>
                                 {facCount} nets
                               </div>
                             </th>
@@ -1819,7 +1831,9 @@ const PeeringDBDashboard: React.FC = () => {
                           borderBottom: `1px solid ${theme.gridBorder}`,
                         }}
                       >
-                        <td style={{ ...bodyCellBase, minWidth: 80 }}>{net.asn ?? "?"}</td>
+                        <td style={{ ...bodyCellBase, minWidth: 80, fontWeight: 600 }}>
+                          {net.asn ?? "?"}
+                        </td>
                         <td
                           style={{
                             ...bodyCellBase,
@@ -1829,6 +1843,7 @@ const PeeringDBDashboard: React.FC = () => {
                             whiteSpace: "nowrap",
                             overflow: "hidden",
                             textOverflow: "ellipsis",
+                            fontWeight: 600,
                           }}
                           title={net.name ?? ""}
                         >
@@ -1865,7 +1880,7 @@ const PeeringDBDashboard: React.FC = () => {
           {metroNetworks.length === 0 && !allNetLoading && !error && (
             <div
               style={{
-                fontSize: 12,
+                fontSize: 13,
                 color: theme.textMuted,
                 padding: 12,
                 borderRadius: 8,
