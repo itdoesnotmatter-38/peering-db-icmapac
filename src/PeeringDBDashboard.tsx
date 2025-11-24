@@ -303,9 +303,14 @@ const PeeringDBDashboard: React.FC = () => {
         const ixUrl = `https://www.peeringdb.com/api/ix?country=${cfg.country}&city=${encodeURIComponent(
           cfg.city
         )}`;
-        const facUrl = `https://www.peeringdb.com/api/fac?country=${cfg.country}&city=${encodeURIComponent(
-          cfg.city
-        )}`;
+      // For Hong Kong, fetch facilities by country only.
+// For all other metros, keep using country + city.
+const facUrl =
+  cfg.country === "HK"
+    ? `https://www.peeringdb.com/api/fac?country=${cfg.country}`
+    : `https://www.peeringdb.com/api/fac?country=${cfg.country}&city=${encodeURIComponent(
+        cfg.city
+      )}`;
 
         const [ixResp, facResp] = await Promise.all([fetch(ixUrl), fetch(facUrl)]);
 
