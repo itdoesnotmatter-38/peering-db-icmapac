@@ -1,0 +1,1722 @@
+import React, { useEffect, useState } from "react";
+
+const METROS = {
+  Singapore: { country: "SG", city: "Singapore" },
+  Jakarta: { country: "ID", city: "Jakarta" },
+  "Kuala Lumpur": { country: "MY", city: "Kuala Lumpur" },
+};
+
+type MetroKey = keyof typeof METROS;
+
+interface MetroNetwork {
+  netId: number;
+  asn?: number;
+  name?: string; // PeeringDB org/name label
+  ixCaps: Map<number, number>; // ix_id -> total capacity Mbps
+  facIds: Set<number>;
+}
+
+interface OrgGroup {
+  org: string;
+  facilities: { fac: any; networkCount: number }[];
+  totalNetworks: number;
+}
+
+const PeeringDBDashboard: React.FC = () => {
+  const [selectedMetro, setSelectedMetro] = useState<MetroKey>("Singapore");
+
+  const [ixData, setIxData] = useState<any[]>([]);
+  const [facData, setFacData] = useState<any[]>([]);
+  const [listsLoading, setListsLoading] = useState(false);
+  const [listsError, setListsError] = useState<string | null>(null);
+
+  const [networks, setNetworks] = useState<MetroNetwork[]>([]);
+  const [networksLoading, setNetworksLoading] = useState(false);
+  const [networksError, setNetworksError] = useState<string | null>(null);
+  const [filterText, setFilterText] = useState("");
+
+  const metro = METROS[selectedMetro];
+
+  // Map utility
+  const chunkArray = (arr: any[], size: number) => {
+    const result: any[][] = [];
+    for (let i = 0; i < arr.length; i += size) {
+      result.push(arr.slice(i, i + size));
+    }
+    return result;
+  };
+
+  // Classify DC operator
+  const classifyOrg = (name: string | undefined): string => {
+    if (!name) return "Other / Unknown";
+    const n = name.toLowerCase();
+    if (n.includes("equinix")) return "Equinix";
+    if (n.includes("ntt")) return "NTT";
+    if (n.includes("stt") || n.includes("st telemedia")) return "STT";
+    if (n.includes("aims")) return "AIMS";
+    if (n.includes("digital realty")) return "Digital Realty";
+    if (n.includes("digital edge")) return "Digital Edge";
+    if (n.includes("edge")) return "Edge";
+    if (n.includes("tm one")) return "TM ONE";
+    if (n.includes("measat")) return "MEASAT";
+    if (n.includes("keppel")) return "Keppel";
+    return "Other / Unknown";
+  };
+
+  // Fetch IX & FAC lists when metro changes
+  useEffect(() => {
+    const fetchLists = async () => {
+      setListsLoading(true);
+      setListsError(null);
+      setNetworks([]);
+      setNetworksError(null);
+
+      try {
+        const ixUrl = `https://www.peeringdb.com/api/ix?country=${metro.country}`;
+        const facUrl = `https://www.peeringdb.com/api/fac?country=${metro.country}&city=${encodeURIComponent(
+          metro.city
+        )}`;
+
+        const [ixResp, facResp] = await Promise.all([fetch(ixUrl), fetch(facUrl)]);
+
+        if (!ixResp.ok) {
+          if (ixResp.status === 429) {
+            throw new Error("IX API error: 429 (PeeringDB rate limit – try again)");
+          }
+          throw new Error(`IX API error: ${ixResp.status}`);
+        }
+        if (!facResp.ok) {
+          if (facResp.status === 429) {
+            throw new Error("FAC API error: 429 (PeeringDB rate limit – try again)");
+          }
+          throw new Error(`FAC API error: ${facResp.status}`);
+        }
+
+        const ixJson = await ixResp.json();
+        const facJson = await facResp.json();
+
+        setIxData(ixJson.data || []);
+        setFacData(facJson.data || []);
+      } catch (e: any) {
+        console.error(e);
+        setListsError(e?.message || "Error fetching PeeringDB lists");
+        setIxData([]);
+        setFacData([]);
+      } finally {
+        setListsLoading(false);
+      }
+    };
+
+    fetchLists();
+  }, [metro]);
+
+  const ixIds = ixData.map((ix) => ix.id).filter((id: any) => typeof id === "number");
+  const facIds = facData.map((fac) => fac.id).filter((id: any) => typeof id === "number");
+
+  // Load all networks for this metro (IX + FAC + org names)
+  const loadNetworks = async () => {
+    if (ixIds.length === 0 && facIds.length === 0) {
+      setNetworksError("No IX or facility IDs found for this metro.");
+      return;
+    }
+    setNetworks([]);
+    setNetworksError(null);
+    setNetworksLoading(true);
+
+    try {
+      const netMap = new Map<number, MetroNetwork>();
+
+      // 1) IX presence & capacity (netixlan by ix_id__in)
+      const ixChunks = chunkArray(ixIds, 20);
+      for (const chunk of ixChunks) {
+        const param = encodeURIComponent(chunk.join(","));
+        const url = `https://www.peeringdb.com/api/netixlan?ix_id__in=${param}`;
+        const resp = await fetch(url);
+        if (!resp.ok) continue;
+        const json = await resp.json();
+        const rows = Array.isArray(json.data) ? json.data : [];
+
+        rows.forEach((row: any) => {
+          const ixId = row.ix_id;
+          const netId = row.net_id;
+          const asn = row.asn;
+          if (!ixId || !netId) return;
+
+          if (!netMap.has(netId)) {
+            netMap.set(netId, {
+              netId,
+              asn,
+              name: undefined,
+              ixCaps: new Map<number, number>(),
+              facIds: new Set<number>(),
+            });
+          }
+          const entry = netMap.get(netId)!;
+          if (asn && entry.asn == null) entry.asn = asn;
+
+          const speed = typeof row.speed === "number" ? row.speed : 0;
+          const prev = entry.ixCaps.get(ixId) ?? 0;
+          entry.ixCaps.set(ixId, prev + Math.max(0, speed));
+        });
+      }
+
+      // 2) Facilities via netfac
+      const facChunks = chunkArray(facIds, 20);
+      for (const chunk of facChunks) {
+        const param = encodeURIComponent(chunk.join(","));
+        const url = `https://www.peeringdb.com/api/netfac?fac_id__in=${param}`;
+        const resp = await fetch(url);
+        if (!resp.ok) continue;
+        const json = await resp.json();
+        const rows = Array.isArray(json.data) ? json.data : [];
+
+        rows.forEach((row: any) => {
+          const facId = row.fac_id;
+          const netId = row.net_id;
+          if (!facId || !netId) return;
+
+          if (!netMap.has(netId)) {
+            netMap.set(netId, {
+              netId,
+              asn: undefined,
+              name: undefined,
+              ixCaps: new Map<number, number>(),
+              facIds: new Set<number>([facId]),
+            });
+          } else {
+            const entry = netMap.get(netId)!;
+            entry.facsIds?.add?.(facId) ?? entry.facIds.add(facId);
+          }
+        });
+      }
+
+      // 3) Enrich network names (org/name) via /net?asn=
+      const asnsToQuery = Array.from(
+        new Set(
+          Array.from(netMap.values())
+            .map((n) => n.asn)
+            .filter((a): a is number => typeof a === "number")
+        )
+      ).slice(0, 200);
+
+      for (const asn of asnsToQuery) {
+        try {
+          const resp = await fetch(`https://www.peeringdb.com/api/net?asn=${asn}`);
+          if (!resp.ok) continue;
+          const json = await resp.json();
+          const net = Array.isArray(json.data) && json.data[0] ? json.data[0] : null;
+          if (!net) continue;
+          const label: string | undefined = net.org || net.name;
+          if (!label) continue;
+          Array.from(netMap.values())
+            .filter((n) => n.asn === asn)
+            .forEach((n) => {
+              n.name = label;
+            });
+        } catch {
+          // ignore individual net failures
+        }
+      }
+
+      const nets = Array.from(netMap.values()).sort((a, b) => {
+        const aAsn = a.asn ?? Number.MAX_SAFE_INTEGER;
+        const bAsn = b.asn ?? Number.MAX_SAFE_INTEGER;
+        return aAsn - bAsn;
+      });
+
+      setNetworks(nets);
+    } catch (e: any) {
+      console.error(e);
+      setNetworksError(e?.message || "Error loading networks");
+      setNetworks([]);
+    } finally {
+      setNetworksLoading(false);
+    }
+  };
+
+  // Filter networks by ASNs typed
+  const filteredNetworks: MetroNetwork[] = (() => {
+    const raw = filterText
+      .split(/[\s,]+/)
+      .map((s) => s.trim())
+      .filter(Boolean);
+    const asnSet = new Set(raw.map((s) => parseInt(s, 10)).filter((n) => !Number.isNaN(n)));
+    if (asnSet.size === 0) return networks;
+    return networks.filter((n) => n.asn && asnSet.has(n.asn));
+  })();
+
+  // Build IX counts and order
+  const ixCounts = new Map<number, number>();
+  filteredNetworks.forEach((n) => {
+    n.ixCaps.forEach((_cap, ixId) => {
+      ixCounts.set(ixId, (ixCounts.get(ixId) ?? 0) + 1);
+    });
+  });
+
+  const ixColumnsSorted = ixData
+    .filter((ix) => typeof ix.id === "number")
+    .sort((a, b) => {
+      const ca = ixCounts.get(a.id) ?? 0;
+      const cb = ixCounts.get(b.id) ?? 0;
+      return cb - ca;
+    });
+
+  // Build facility counts and org grouping
+  const facNetworkCounts = new Map<number, number>();
+  filteredNetworks.forEach((n) => {
+    n.facIds.forEach((fid) => {
+      facNetworkCounts.set(fid, (facNetworkCounts.get(fid) ?? 0) + 1);
+    });
+  });
+
+  const orgGroups: OrgGroup[] = [];
+  const orgMap = new Map<string, OrgGroup>();
+
+  facData.forEach((fac) => {
+    const org = classifyOrg(fac.name);
+    const count = facNetworkCounts.get(fac.id) ?? 0;
+    if (!orgMap.has(org)) {
+      orgMap.set(org, { org, facilities: [], totalNetworks: 0 });
+    }
+    const g = orgMap.get(org)!;
+    g.facilities.push({ fac, networkCount: count });
+    g.totalNetworks += count;
+  });
+
+  orgMap.forEach((g) => {
+    g.facilities.sort((a, b) => b.networkCount - a.networkCount);
+    orgGroups.push(g);
+  });
+
+  orgGroups.sort((a, b) => {
+    if (a.org === "Equinix") return -1;
+    if (b.org === "Equinix") return 1;
+    return b.totalNetworks - a.totalNetworks;
+  });
+
+  const facColumnsFlat = orgGroups.flatMap((g) => g.facilities.map((f) => f.fac));
+
+  return (
+    <div className="min-h-screen bg-slate-950 text-slate-50 flex flex-col">
+      <header className="border-b border-slate-800 px-6 py-4 flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight">PeeringDB – Metro Peering Snapshot</h1>
+          <p className="text-sm text-slate-400">
+            Metro view of IX &amp; DC ecosystem, with ASN presence and deployed capacity from PeeringDB.
+          </p>
+        </div>
+        <div className="flex items-center gap-2 text-xs text-slate-400">
+          <span>Metro:</span>
+          {(Object.keys(METROS) as MetroKey[]).map((m) => (
+            <label key={m} className="flex items-center gap-1">
+              <input
+                type="radio"
+                name="metro"
+                checked={selectedMetro === m}
+                onChange={() => setSelectedMetro(m)}
+              />
+              <span>{m}</span>
+            </label>
+          ))}
+        </div>
+      </header>
+
+      <main className="flex flex-1 overflow-hidden divide-x divide-slate-800">
+        {/* Sidebar */}
+        <aside className="w-72 px-5 py-4 space-y-4 bg-slate-900/40 text-sm">
+          <section>
+            <div className="text-xs text-slate-400 uppercase mb-1">Summary</div>
+            {listsLoading ? (
+              <div className="text-slate-500 text-xs">Loading IX &amp; DC lists…</div>
+            ) : (
+              <>
+                <div>
+                  IXes in country: <strong>{ixData.length}</strong>
+                </div>
+                <div>
+                  Facilities in metro: <strong>{facData.length}</strong>
+                </div>
+              </>
+            )}
+          </section>
+
+          {listsError && (
+            <div className="text-xs text-red-400 bg-red-900/30 border border-red-500/40 rounded px-2 py-1">
+              {listsError}
+            </div>
+          )}
+
+          <section className="pt-2 border-t border-slate-800">
+            <div className="text-xs text-slate-400 uppercase mb-1">Filter ASNs (optional)</div>
+            <p className="text-[11px] text-slate-500 mb-1">
+              Limit view to specific ASNs (comma/space separated). Leave blank for all networks.
+            </p>
+            <textarea
+              className="w-full h-20 bg-slate-950 border border-slate-700 rounded px-2 py-1 text-xs"
+              value={filterText}
+              onChange={(e) => setFilterText(e.target.value)}
+              placeholder="e.g. 13335, 15169 8075"
+            />
+          </section>
+
+          <section className="pt-2 border-t border-slate-800">
+            <button
+              className="w-full text-xs px-3 py-2 rounded-md border border-emerald-500 bg-emerald-600/10 hover:bg-emerald-600/20 text-emerald-100 disabled:opacity-50 disabled:cursor-not-allowed"
+              onClick={loadNetworks}
+              disabled={networksLoading || listsLoading || ixData.length === 0}
+            >
+              {networksLoading ? "Loading networks…" : "Load / Refresh networks"}
+            </button>
+            {networksError && (
+              <div className="mt-1 text-[11px] text-red-400">{networksError}</div>
+            )}
+            {networks.length > 0 && !networksLoading && (
+              <div className="mt-1 text-[11px] text-slate-400">
+                Loaded <strong>{networks.length}</strong> networks from PeeringDB.
+              </div>
+            )}
+          </section>
+        </aside>
+
+        {/* Main content */}
+        <section className="flex-1 flex flex-col gap-6 p-4 overflow-auto text-xs text-slate-200">
+          {/* IX Matrix */}
+          <div className="space-y-2">
+            <div className="flex items-end justify-between">
+              <div>
+                <h2 className="text-sm font-semibold">ASN × IX – capacity in Gbps (green = present)</h2>
+                <p className="text-[11px] text-slate-500">
+                  Columns sorted by number of networks in view. Cells show summed PeeringDB port speeds.
+                </p>
+              </div>
+            </div>
+            <div className="border border-slate-800 rounded-lg overflow-auto bg-slate-950/80">
+              {filteredNetworks.length === 0 || ixColumnsSorted.length === 0 ? (
+                <div className="p-3 text-slate-500">
+                  {networksLoading
+                    ? "Loading…"
+                    : "No IX data or networks. Load networks, or adjust your ASN filter."}
+                </div>
+              ) : (
+                <table className="w-full border-collapse">
+                  <thead className="bg-slate-900">
+                    <tr>
+                      <th className="text-left px-2 py-1">ASN</th>
+                      <th className="text-left px-2 py-1">Name</th>
+                      {ixColumnsSorted.map((ix) => {
+                        const count = ixCounts.get(ix.id) ?? 0;
+                        return (
+                          <th key={ix.id} className="text-center px-2 py-1">
+                            <div>{ix.name}</div>
+                            <div className="text-[10px] text-slate-500">
+                              {count} nets
+                            </div>
+                          </th>
+                        );
+                      })}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredNetworks.map((net, rowIndex) => (
+                      <tr
+                        key={net.netId}
+                        className={rowIndex % 2 === 0 ? "bg-slate-950" : "bg-slate-900"}
+                      >
+                        <td className="px-2 py-1">{net.asn ?? "?"}</td>
+                        <td className="px-2 py-1 truncate" title={net.name}>
+                          {net.asn
+                            ? net.name
+                              ? `${net.asn}, ${net.name}`
+                              : `${net.asn}`
+                            : ""}
+                        </td>
+                        {ixColumnsSorted.map((ix) => {
+                          const capMbps = net.ixCaps.get(ix.id) ?? 0;
+                          const capGbps = capMbps / 1000;
+                          const present = capMbps > 0;
+                          return (
+                            <td
+                              key={ix.id}
+                              className={`px-2 py-1 text-center ${
+                                present ? "bg-emerald-700 text-emerald-50" : "text-slate-700"
+                              }`}
+                            >
+                              {present ? capGbps.toFixed(1) : "–"}
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          </div>
+
+          {/* Facility Matrix */}
+          <div className="space-y-2">
+            <div className="flex items-end justify-between">
+              <div>
+                <h2 className="text-sm font-semibold">
+                  ASN × Facility – presence by organization (green = present)
+                </h2>
+                <p className="text-[11px] text-slate-500">
+                  Facilities grouped by operator. Org header shows total networks; each facility shows its own net
+                  count.
+                </p>
+              </div>
+            </div>
+            <div className="border border-slate-800 rounded-lg overflow-auto bg-slate-950/80">
+              {filteredNetworks.length === 0 || facColumnsFlat.length === 0 ? (
+                <div className="p-3 text-slate-500">
+                  {networksLoading
+                    ? "Loading…"
+                    : "No facilities or networks. Load networks, or adjust your ASN filter."}
+                </div>
+              ) : (
+                <table className="w-full border-collapse">
+                  <thead className="bg-slate-900">
+                    {/* Org row */}
+                    <tr>
+                      <th className="text-left px-2 py-1" rowSpan={2}>
+                        ASN
+                      </th>
+                      <th className="text-left px-2 py-1" rowSpan={2}>
+                        Name
+                      </th>
+                      {orgGroups.map((g) => (
+                        <th
+                          key={g.org}
+                          className="text-center px-2 py-1 border-b border-slate-800"
+                          colSpan={g.facilities.length || 1}
+                        >
+                          <div>{g.org}</div>
+                          <div className="text-[10px] text-slate-500">
+                            {g.totalNetworks} nets
+                          </div>
+                        </th>
+                      ))}
+                    </tr>
+                    {/* Facility row */}
+                    <tr>
+                      {orgGroups.flatMap((g) =>
+                        g.facilities.map((f) => {
+                          const facId = f.fac.id;
+                          const facCount = facNetworkCounts.get(facId) ?? 0;
+                          return (
+                            <th
+                              key={facId}
+                              className="text-center px-2 py-1 border-b border-slate-800"
+                            >
+                              <div>{f.fac.name}</div>
+                              <div className="text-[10px] text-slate-500">
+                                {facCount} nets
+                              </div>
+                            </th>
+                          );
+                        })
+                      )}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredNetworks.map((net, rowIndex) => (
+                      <tr
+                        key={net.netId}
+                        className={rowIndex % 2 === 0 ? "bg-slate-950" : "bg-slate-900"}
+                      >
+                        <td className="px-2 py-1">{net.asn ?? "?"}</td>
+                        <td className="px-2 py-1 truncate" title={net.name}>
+                          {net.asn
+                            ? net.name
+                              ? `${net.asn}, ${net.name}`
+                              : `${net.asn}`
+                            : ""}
+                        </td>
+                        {orgGroups.flatMap((g) =>
+                          g.facilities.map((f) => {
+                            const facId = f.fac.id;
+                            const present = net.facIds.has(facId);
+                            return (
+                              <td
+                                key={`${net.netId}-${facId}`}
+                                className={`px-2 py-1 text-center ${
+                                  present ? "bg-emerald-700 text-emerald-50" : "text-slate-700"
+                                }`}
+                              >
+                                {present ? "●" : "–"}
+                              </td>
+                            );
+                          })
+                        )}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+  );
+};
+
+export default PeeringDBDashboard;import React, { useState, useEffect } from "react";
+
+const METROS = {
+  Singapore: { country: "SG", city: "Singapore" },
+  Jakarta: { country: "ID", city: "Jakarta" },
+  "Kuala Lumpur": { country: "MY", city: "Kuala Lumpur" },
+};
+
+type MetroKey = keyof typeof METROS;
+
+interface MetroNetwork {
+  netId: number;
+  asn?: number;
+  name?: string; // PeeringDB org/name label
+  ixCaps: Map<number, number>; // ix_id -> total capacity Mbps
+  facIds: Set<number>;
+}
+
+interface OrgGroup {
+  org: string;
+  facilities: { fac: any; networkCount: number }[];
+  totalNetworks: number;
+}
+
+const PeeringDBDashboard: React.FC = () => {
+  const [viewMode, setViewMode] = useState<"single" | "compare">("single");
+  const [selectedMetro, setSelectedMetro] = useState<MetroKey>("Singapore");
+
+  const [ixData, setIxData] = useState<any[]>([]);
+  const [facData, setFacData] = useState<any[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const [networks, setNetworks] = useState<MetroNetwork[]>([]);
+  const [networksLoading, setNetworksLoading] = useState(false);
+  const [networksError, setNetworksError] = useState<string | null>(null);
+  const [filterText, setFilterText] = useState("");
+
+  const metro = METROS[selectedMetro];
+
+  // === Facility org classification ===
+  const classifyOrg = (name: string | undefined): string => {
+    if (!name) return "Other / Unknown";
+    const n = name.toLowerCase();
+    if (n.includes("equinix")) return "Equinix";
+    if (n.includes("ntt")) return "NTT";
+    if (n.includes("stt") || n.includes("st telemedia")) return "STT";
+    if (n.includes("aims")) return "AIMS";
+    if (n.includes("digital realty")) return "Digital Realty";
+    if (n.includes("digital edge")) return "Digital Edge";
+    if (n.includes("edge")) return "Edge";
+    if (n.includes("tm one")) return "TM ONE";
+    if (n.includes("measat")) return "MEASAT";
+    if (n.includes("keppel")) return "Keppel";
+    return "Other / Unknown";
+  };
+
+  // === Fetch IX + FAC list for current metro ===
+  useEffect(() => {
+    const fetchLists = async () => {
+      setLoading(true);
+      setError(null);
+      setNetworks([]);
+      setNetworksError(null);
+
+      try {
+        const ixUrl = `https://www.peeringdb.com/api/ix?country=${metro.country}`;
+        const facUrl = `https://www.peeringdb.com/api/fac?country=${metro.country}&city=${encodeURIComponent(
+          metro.city
+        )}`;
+
+        const [ixResp, facResp] = await Promise.all([fetch(ixUrl), fetch(facUrl)]);
+
+        if (!ixResp.ok) {
+          if (ixResp.status === 429) {
+            throw new Error("IX API error: 429 (PeeringDB rate limit – try again)");
+          }
+          throw new Error(`IX API error: ${ixResp.status}`);
+        }
+        if (!facResp.ok) {
+          if (facResp.status === 429) {
+            throw new Error("FAC API error: 429 (PeeringDB rate limit – try again)");
+          }
+          throw new Error(`FAC API error: ${facResp.status}`);
+        }
+
+        const ixJson = await ixResp.json();
+        const facJson = await facResp.json();
+
+        setIxData(ixJson.data || []);
+        setFacData(facJson.data || []);
+      } catch (e: any) {
+        console.error(e);
+        setError(e?.message || "Error fetching PeeringDB lists");
+        setIxData([]);
+        setFacData([]);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchLists();
+  }, [metro.country, metro.city]);
+
+  const ixIds = ixData.map((ix) => ix.id).filter((id: any) => typeof id === "number");
+  const facIds = facData.map((fac) => fac.id).filter((id: any) => typeof id === "number");
+
+  // === Helper: chunk an array ===
+  const chunk = <T,>(arr: T[], size: number): T[][] => {
+    const out: T[][] = [];
+    for (let i = 0; i < arr.length; i += size) {
+      out.push(arr.slice(i, i + size));
+    }
+    return out;
+  };
+
+  // === Load all networks with IX + FAC presence ===
+  const loadNetworks = async () => {
+    if (ixIds.length === 0 && facIds.length === 0) {
+      setNetworksError("No IX or facility IDs found for this metro.");
+      return;
+    }
+    setNetworksError(null);
+    setNetworks([]);
+    setNetworksLoading(true);
+
+    try {
+      const netMap = new Map<number, MetroNetwork>();
+
+      // 1) IX presence & capacity via netixlan
+      const ixChunks = chunk(ixIds, 20);
+      for (const ch of ixChunks) {
+        const param = ch.join(",");
+        const url = `https://www.peeringdb.com/api/netixlan?ix_id__in=${encodeURIComponent(param)}`;
+        const resp = await fetch(url);
+        if (!resp.ok) continue;
+        const json = await resp.json();
+        const rows = Array.isArray(json.data) ? json.data : [];
+
+        rows.forEach((row: any) => {
+          const ixId = row.ix_id;
+          const netId = row.net_id;
+          const asn = row.asn;
+          if (!ixId || !netId) return;
+
+          if (!netMap.has(netId)) {
+            netMap.set(netId, {
+              netId,
+              asn,
+              name: undefined,
+              ixCaps: new Map<number, number>(),
+              facIds: new Set<number>(),
+            });
+          }
+          const entry = netMap.get(netId)!;
+          if (asn && entry.asn == null) entry.asn = asn;
+
+          const speed = typeof row.speed === "number" ? row.speed : 0;
+          // sum capacity per IX (in Mbps)
+          const prev = entry.ixCaps.get(ixId) ?? 0;
+          entry.ixCaps.set(ixId, prev + Math.max(0, speed));
+        });
+      }
+
+      // 2) Facilities via netfac
+      const facChunks = chunk(facIds, 20);
+      for (const ch of facChunks) {
+        const param = ch.join(",");
+        const url = `https://www.peeringdb.com/api/netfac?fac_id__in=${encodeURIComponent(param)}`;
+        const resp = await fetch(url);
+        if (!resp.ok) continue;
+        const json = await resp.json();
+        const rows = Array.isArray(json.data) ? json.data : [];
+
+        rows.forEach((row: any) => {
+          const facId = row.fac_id;
+          const netId = row.net_id;
+          if (!facId || !netId) return;
+
+          if (!netMap.has(netId)) {
+            netMap.set(netId, {
+              netId,
+              asn: undefined,
+              name: undefined,
+              ixCaps: new Map<number, number>(),
+              facIds: new Set<number>([facId]),
+            });
+          } else {
+            const entry = netMap.get(netId)!;
+            entry.facIds.add(facId);
+          }
+        });
+      }
+
+      // 3) Enrich names via /net?asn= (using org if available)
+      const asnsToQuery = Array.from(
+        new Set(
+          Array.from(netMap.values())
+            .map((n) => n.asn)
+            .filter((a): a is number => typeof a === "number")
+        )
+      ).slice(0, 200);
+
+      for (const asn of asnsToQuery) {
+        try {
+          const resp = await fetch(`https://www.peeringdb.com/api/net?asn=${asn}`);
+          if (!resp.ok) continue;
+          const json = await resp.json();
+          const net = Array.isArray(json.data) && json.data[0] ? json.data[0] : null;
+          if (!net) continue;
+          const label: string | undefined = net.org || net.name;
+          if (!label) continue;
+          Array.from(netMap.values())
+            .filter((n) => n.asn === asn)
+            .forEach((n) => {
+              n.name = label;
+            });
+        } catch {
+          // ignore individual net failures
+        }
+      }
+
+      const nets = Array.from(netMap.values()).sort((a, b) => {
+        const aAsn = a.asn ?? Number.MAX_SAFE_INTEGER;
+        const bAsn = b.asn ?? Number.MAX_SAFE_INTEGER;
+        return aAsn - bAsn;
+      });
+
+      setNetworks(nets);
+    } catch (e: any) {
+      console.error(e);
+      setNetworksError(e?.message || "Error loading networks");
+      setNetworks([]);
+    } finally {
+      setNetworksLoading(false);
+    }
+  };
+
+  // === Filtered networks ===
+  const filteredNetworks = (() => {
+    const raw = filterText
+      .split(/[\s,]+/)
+      .map((s) => s.trim())
+      .filter(Boolean);
+    const asns = new Set(raw.map((s) => parseInt(s, 10)).filter((n) => !Number.isNaN(n)));
+    if (asns.size === 0) return networks;
+    return networks.filter((n) => n.asn && asns.has(n.asn));
+  })();
+
+  // === IX counts & ordering ===
+  const ixCounts = new Map<number, number>();
+  filteredNetworks.forEach((n) => {
+    n.ixCaps.forEach((_cap, ixId) => {
+      const prev = ixCounts.get(ixId) ?? 0;
+      ixCounts.set(ixId, prev + 1);
+    });
+  });
+
+  const ixColumnsSorted = ixData
+    .filter((ix) => typeof ix.id === "number")
+    .sort((a, b) => {
+      const ca = ixCounts.get(a.id) ?? 0;
+      const cb = ixCounts.get(b.id) ?? 0;
+      return cb - ca;
+    });
+
+  // === Facility counts & org grouping ===
+  const facNetworkCounts = new Map<number, number>();
+  filteredNetworks.forEach((n) => {
+    n.facIds.forEach((fid) => {
+      const prev = facNetworkCounts.get(fid) ?? 0;
+      facNetworkCounts.set(fid, prev + 1);
+    });
+  });
+
+  const orgGroups: OrgGroup[] = [];
+  const orgMap = new Map<string, OrgGroup>();
+
+  facData.forEach((fac) => {
+    const org = classifyOrg(fac.name);
+    const count = facNetworkCounts.get(fac.id) ?? 0;
+    if (!orgMap.has(org)) {
+      orgMap.set(org, { org, facilities: [], totalNetworks: 0 });
+    }
+    const g = orgMap.get(org)!;
+    g.facilities.push({ fac, networkCount: count });
+    g.totalNetworks += count;
+  });
+
+  orgMap.forEach((g) => {
+    g.facilities.sort((a, b) => b.networkCount - a.networkCount);
+    orgGroups.push(g);
+  });
+
+  orgGroups.sort((a, b) => {
+    if (a.org === "Equinix") return -1;
+    if (b.org === "Equinix") return 1;
+    return b.totalNetworks - a.totalNetworks;
+  });
+
+  const facColumnsFlat = orgGroups.flatMap((g) => g.facilities.map((f) => f.fac));
+
+  // === Render ===
+  return (
+    <div className="min-h-screen bg-slate-950 text-slate-50 flex flex-col">
+      <header className="border-b border-slate-800 px-6 py-4 flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight">PeeringDB – Metro Peering Snapshot</h1>
+          <p className="text-sm text-slate-400">
+            Metro view of IX &amp; DC ecosystem, with ASN presence and deployed capacity from PeeringDB.
+          </p>
+        </div>
+        <div className="flex items-center gap-2 text-xs text-slate-400">
+          <span>Metro:</span>
+          {(Object.keys(METROS) as MetroKey[]).map((m) => (
+            <label key={m} className="flex items-center gap-1">
+              <input
+                type="radio"
+                name="metro"
+                checked={selectedMetro === m}
+                onChange={() => setSelectedMetro(m)}
+              />
+              <span>{m}</span>
+            </label>
+          ))}
+        </div>
+      </header>
+
+      <main className="flex flex-1 overflow-hidden divide-x divide-slate-800">
+        {/* Sidebar */}
+        <aside className="w-72 px-5 py-4 space-y-4 bg-slate-900/40 text-sm">
+          <section>
+            <div className="text-xs text-slate-400 uppercase mb-1">Summary</div>
+            <div>IXes in country: <strong>{ixData.length}</strong></div>
+            <div>Facilities in metro: <strong>{facData.length}</strong></div>
+          </section>
+
+          {error && (
+            <div className="text-xs text-red-400 bg-red-900/30 border border-red-500/40 rounded px-2 py-1">
+              {error}
+            </div>
+          )}
+
+          <section className="pt-2 border-t border-slate-800">
+            <div className="text-xs text-slate-400 uppercase mb-1">Filter ASNs (optional)</div>
+            <p className="text-[11px] text-slate-500 mb-1">
+              Limit view to specific ASNs (comma/space separated).
+            </p>
+            <textarea
+              className="w-full h-20 bg-slate-950 border border-slate-700 rounded px-2 py-1 text-xs"
+              value={filterText}
+              onChange={(e) => setAsnInput(e.target.value)}
+              placeholder="e.g. 13335, 15169 8075"
+            />
+          </section>
+
+          <section className="pt-2 border-t border-slate-800">
+            <button
+              className="w-full text-xs px-3 py-2 rounded-md border border-emerald-500 bg-emerald-600/10 hover:bg-emerald-600/20 text-emerald-100 disabled:opacity-50 disabled:cursor-not-allowed"
+              onClick={loadNetworks}
+              disabled={networksLoading || loading || ixData.length === 0}
+            >
+              {networksLoading ? "Loading networks…" : "Load / Refresh networks"}
+            </button>
+            {networksError && (
+              <div className="mt-1 text-[11px] text-red-400">{networksError}</div>
+            )}
+            {networks.length > 0 && !networksLoading && (
+              <div className="mt-1 text-[11px] text-slate-400">
+                Loaded <strong>{networks.length}</strong> networks from PeeringDB.
+              </div>
+            )}
+          </section>
+        </aside>
+
+        {/* Main content */}
+        <section className="flex-1 flex flex-col gap-6 p-4 overflow-auto text-xs text-slate-200">
+          {/* IX Matrix */}
+          <div className="space-y-2">
+            <div className="flex items-end justify-between">
+              <div>
+                <h2 className="text-sm font-semibold">ASN × IX – capacity in Gbps (green = present)</h2>
+                <p className="text-[11px] text-slate-500">
+                  Columns sorted by number of networks in view. Cells show summed PeeringDB port speeds.
+                </p>
+              </div>
+            </div>
+            <div className="border border-slate-800 rounded-lg overflow-auto bg-slate-950/80">
+              {filteredNetworks.length === 0 || ixColumnsSorted.length === 0 ? (
+                <div className="p-3 text-slate-500">
+                  {networksLoading
+                    ? "Loading…"
+                    : "No IX data or networks. Load networks, or adjust your ASN filter."}
+                </div>
+              ) : (
+                <table className="w-full border-collapse">
+                  <thead className="bg-slate-900">
+                    <tr>
+                      <th className="text-left px-2 py-1">ASN</th>
+                      <th className="text-left px-2 py-1">Name</th>
+                      {ixColumnsSorted.map((ix) => {
+                        const count = ixCounts.get(ix.id) ?? 0;
+                        return (
+                          <th key={ix.id} className="text-center px-2 py-1">
+                            <div>{ix.name}</div>
+                            <div className="text-[10px] text-slate-500">{count} nets</div>
+                          </th>
+                        );
+                      })}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredNetworks.map((net, rowIndex) => (
+                      <tr
+                        key={net.netId}
+                        className={rowIndex % 2 === 0 ? "bg-slate-950" : "bg-slate-900"}
+                      >
+                        <td className="px-2 py-1">{net.asn ?? "?"}</td>
+                        <td className="px-2 py-1 truncate" title={net.name}>
+                          {net.asn
+                            ? net.name
+                              ? `${net.asn}, ${net.name}`
+                              : `${net.asn}`
+                            : ""}
+                        </td>
+                        {ixColumnsSorted.map((ix) => {
+                          const capMbps = net.ixCaps.get(ix.id) ?? 0;
+                          const capGbps = capMbps / 1000;
+                          const present = capMbps > 0;
+                          return (
+                            <td
+                              key={ix.id}
+                              className={`px-2 py-1 text-center ${
+                                present ? "bg-emerald-700 text-emerald-50" : "text-slate-700"
+                              }`}
+                            >
+                              {present ? capGbps.toFixed(1) : "–"}
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          </div>
+
+          {/* Facility Matrix */}
+          <div className="space-y-2">
+            <div className="flex items-end justify-between">
+              <div>
+                <h2 className="text-sm font-semibold">
+                  ASN × Facility – presence by organization (green = present)
+                </h2>
+                <p className="text-[11px] text-slate-500">
+                  Facilities grouped by operator. Org header shows total networks in view; each facility shows its own
+                  network count.
+                </p>
+              </div>
+            </div>
+            <div className "border border-slate-800 rounded-lg overflow-auto bg-slate-950/80">
+              {filteredNetworks.length === 0 || facColumnsFlat.length === 0 ? (
+                <div className="p-3 text-slate-500">
+                  {networksLoading
+                    ? "Loading…"
+                    : "No facilities or networks. Load networks, or adjust your ASN filter."}
+                </div>
+              ) : (
+                <table className="w-full border-collapse">
+                  <thead className="bg-slate-900">
+                    {/* Org row */}
+                    <tr>
+                      <th className="text-left px-2 py-1" rowSpan={2}>
+                        ASN
+                      </th>
+                      <th className="text-left px-2 py-1" rowSpan={2}>
+                        Name
+                      </th>
+                      {orgGroups.map((g) => (
+                        <th
+                          key={g.org}
+                          className="text-center px-2 py-1 border-b border-slate-800"
+                          colSpan={g.facilities.length || 1}
+                        >
+                          <div>{g.org}</div>
+                          <div className="text-[10px] text-slate-500">
+                            {g.totalNetworks} nets
+                          </div>
+                        </th>
+                      ))}
+                    </tr>
+                    {/* Facility row */}
+                    <tr>
+                      {orgGroups.flatMap((g) =>
+                        g.facilities.map((f) => {
+                          const facId = f.fac.id;
+                          const facCount = facNetworkCounts.get(facId) ?? 0;
+                          return (
+                            <th
+                              key={facId}
+                              className="text-center px-2 py-1 border-b border-slate-800"
+                            >
+                              <div>{f.fac.name}</div>
+                              <div className="text-[10px] text-slate-500">
+                                {facCount} nets
+                              </div>
+                            </th>
+                          );
+                        })
+                      )}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredNetworks.map((net, rowIndex) => (
+                      <tr
+                        key={net.netId}
+                        className={rowIndex % 2 === 0 ? "bg-slate-950" : "bg-slate-900"}
+                      >
+                        <td className="px-2 py-1">{net.asn ?? "?"}</td>
+                        <td className="px-2 py-1 truncate" title={net.name}>
+                          {net.asn
+                            ? net.name
+                              ? `${net.asn}, ${net.name}`
+                              : `${net.asn}`
+                            : ""}
+                        </td>
+                        {orgGroups.flatMap((g) =>
+                          g.facilities.map((f) => {
+                            const facId = f.fac.id;
+                            const present = net.facIds.has(facId);
+                            return (
+                              <td
+                                key={`${net.netId}-${facId}`}
+                                className={`px-2 py-1 text-center ${
+                                  present ? "bg-emerald-700 text-emerald-50" : "text-slate-700"
+                                }`}
+                              >
+                                {present ? "●" : "–"}
+                              </td>
+                            );
+                          })
+                        )}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+  );
+};
+
+export default PeeringDBDashboard;
+const METROS = {
+  Singapore: { country: "SG", city: "Singapore" },
+  Jakarta: { country: "ID", city: "Jakarta" },
+  "Kuala Lumpur": { country: "MY", city: "Kuala Lumpur" },
+};
+
+type MetroKey = keyof typeof METROS;
+
+interface MetroNetwork {
+  netId: number;
+  asn?: number;
+  name?: string; // PeeringDB net.name (organization)
+  ixCaps: Map<number, number>; // ix_id -> total capacity Mbps (0 = unknown)
+  facIds: Set<number>;
+}
+
+const PeeringDBDashboard: React.FC = () => {
+  const [selectedMetro, setSelectedMetro] = useState<MetroKey>("Singapore");
+
+  const [ixData, setIxData] = useState<any[]>([]);
+  const [facData, setFacData] = useState<any[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const [allNetLoading, setAllNetLoading] = useState(false);
+  const [allNetError, setAllNetError] = useState<string | null>(null);
+  const [metroNetworks, setMetroNetworks] = useState<MetroNetwork[]>([]);
+  const [filterText, setFilterText] = useState("");
+
+  const metro = METROS[selectedMetro];
+
+  // === Facility org classification ===
+  const classifyOrg = (name: string | undefined): string => {
+    if (!name) return "Other / Unknown";
+    const n = name.toLowerCase();
+    if (n.includes("equinix")) return "Equinix";
+    if (n.includes("ntt")) return "NTT";
+    if (n.includes("stt") || n.includes("st telemedia")) return "STT";
+    if (n.includes("aims")) return "AIMS";
+    if (n.includes("cyber 1") || n.includes("cyber1") || n.includes("apjii")) return "APJII / Cyber1";
+    if (n.includes("digital realty")) return "Digital Realty";
+    if (n.includes("digital edge")) return "Digital Edge";
+    if (n.includes("dci")) return "DCI";
+    return "Other / Unknown";
+  };
+
+  // === Fetch IX + Facility list for current metro ===
+  useEffect(() => {
+    const fetchData = async () => {
+      setLoading(true);
+      setError(null);
+      setMetroNetworks([]);
+      setAllNetError(null);
+
+      try {
+        const ixUrl = `https://www.peeringdb.com/api/ix?country=${metro.country}&city=${encodeURIComponent(
+          metro.city
+        )}`;
+        const facUrl = `https://www.peeringdb.com/api/fac?country=${metro.country}&city=${encodeURIComponent(
+          metro.city
+        )}`;
+
+        const [ixResp, facResp] = await Promise.all([fetch(ixUrl), fetch(facUrl)]);
+
+        if (!ixResp.ok) {
+          if (ixResp.status === 429) {
+            throw new Error("IX API error: 429 (PeeringDB rate limit – try again later)");
+          }
+          throw new Error(`IX API error: ${ixResp.status}`);
+        }
+        if (!facResp.ok) {
+          if (facResp.status === 429) {
+            throw new Error("FAC API error: 429 (PeeringDB rate limit – try again later)");
+          }
+          throw new Error(`FAC API error: ${facResp.status}`);
+        }
+
+        const ixJson = await ixResp.json();
+        const facJson = await facResp.json();
+
+        setIxData(ixJson.data || []);
+        setFacData(facJson.data || []);
+      } catch (e: any) {
+        console.error(e);
+        setError(e?.message || "Unknown error fetching PeeringDB data");
+        setIxData([]);
+        setFacData([]);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchData();
+  }, [metro.country, metro.city]);
+
+  const ixIds = ixData.map((ix) => ix.id).filter((id: any) => typeof id === "number");
+  const facIds = facData.map((fac) => fac.id).filter((id: any) => typeof id === "number");
+
+  // === Helper: chunk an array ===
+  const chunk = <T,>(arr: T[], size: number): T[][] => {
+    const out: T[][] = [];
+    for (let i = 0; i < arr.length; i += size) {
+      out.push(arr.slice(i, i + size));
+    }
+    return out;
+  };
+
+  // === Load all networks across IX + FAC ===
+  const handleLoadAllNetworks = async () => {
+    if (ixIds.length === 0 && facIds.length === 0) {
+      setAllNetError("No IX or facility IDs found for this metro.");
+      return;
+    }
+
+    setAllNetError(null);
+    setAllNetLoading(true);
+    setMetroNetworks([]);
+
+    try {
+      const netMap = new Map<number, MetroNetwork>();
+
+      // 1) IX presence + capacity via netixlan
+      const ixChunks = chunk(ixIds, 20);
+      for (const ch of ixChunks) {
+        const param = ch.join(",");
+        const url = `https://www.peeringdb.com/api/netixlan?ix_id__in=${param}`;
+        const resp = await fetch(url);
+        if (!resp.ok) continue;
+        const json = await resp.json();
+        const rows = json.data || [];
+
+        rows.forEach((row: any) => {
+          const netId = row.net_id;
+          const asn = row.asn;
+          const ixId = row.ix_id;
+          if (!netId || !ixId) return;
+
+          if (!netMap.has(netId)) {
+            netMap.set(netId, {
+              netId,
+              asn,
+              name: undefined,
+              ixCaps: new Map<number, number>(),
+              facIds: new Set<number>(),
+            });
+          }
+          const entry = netMap.get(netId)!;
+          if (asn && entry.asn == null) entry.asn = asn;
+
+          const speed = typeof row.speed === "number" ? row.speed : 0;
+          const prev = entry.ixCaps.get(ixId) ?? 0;
+          entry.ixCaps.set(ixId, prev + (speed > 0 ? speed : 0)); // only sum positive speeds
+        });
+      }
+
+      // 2) Facility presence via netfac
+      const facChunks = chunk(facIds, 20);
+      for (const ch of facChunks) {
+        const param = ch.join(",");
+        const url = `https://www.peeringdb.com/api/netfac?fac_id__in=${param}`;
+        const resp = await fetch(url);
+        if (!resp.ok) continue;
+        const json = await resp.json();
+        const rows = json.data || [];
+
+        rows.forEach((row: any) => {
+          const netId = row.net_id;
+          const facId = row.fac_id;
+          if (!netId || !facId) return;
+
+          if (!netMap.has(netId)) {
+            netMap.set(netId, {
+              netId,
+              asn: undefined,
+              name: undefined,
+              ixCaps: new Map<number, number>(),
+              facIds: new Set<number>([facId]),
+            });
+          } else {
+            netMap.get(netId)!.facIds.add(facId);
+          }
+        });
+      }
+
+      // 3) Enrich network names (organization) from /net?asn=
+      const asnsToQuery = Array.from(
+        new Set(
+          Array.from(netMap.values())
+            .map((n) => n.asn)
+            .filter((a): a is number => typeof a === "number")
+        )
+      ).slice(0, 150); // safety limit
+
+      for (const asn of asnsToQuery) {
+        try {
+          const r = await fetch(`https://www.peeringdb.com/api/net?asn=${asn}`);
+          if (!r.ok) continue;
+          const j = await r.json();
+          const net = j.data?.[0];
+          if (!net || !net.name) continue;
+          Array.from(netMap.values())
+            .filter((n) => n.asn === asn)
+            .forEach((n) => {
+              n.name = net.name;
+            });
+        } catch {
+          // ignore individual name errors
+        }
+      }
+
+      const networks = Array.from(netMap.values()).sort((a, b) => {
+        const aAsn = a.asn ?? 999999999;
+        const bAsn = b.asn ?? 999999999;
+        return aAsn - bAsn;
+      });
+
+      setMetroNetworks(networks);
+    } catch (e: any) {
+      console.error(e);
+      setAllNetError(e?.message || "Error loading networks for metro.");
+    } finally {
+      setAllNetLoading(false);
+    }
+  };
+
+  // === Filter: multiple ASNs ===
+  const filterAsnSet = (() => {
+    const raw = filterText
+      .split(/[\s,]+/)
+      .map((s) => s.trim())
+      .filter(Boolean);
+    const nums = raw.map((s) => parseInt(s, 10)).filter((n) => !Number.isNaN(n));
+    return new Set(nums);
+  })();
+
+  const filteredNetworks = metroNetworks.filter((net) => {
+    if (filterAsnSet.size === 0) return true;
+    if (!net.asn) return false;
+    return filterAsnSet.has(net.asn);
+  });
+
+  // === IX column ordering and counts ===
+  const ixCounts = new Map<number, number>();
+  filteredNetworks.forEach((net) => {
+    net.ixCaps.forEach((_cap, ixId) => {
+      const prev = ixCounts.get(ixId) ?? 0;
+      ixCounts.set(ixId, prev + 1);
+    });
+  });
+
+  const ixColumnsSorted = [...ixData]
+    .filter((ix) => typeof ix.id === "number")
+    .sort((a, b) => {
+      const aCount = ixCounts.get(a.id) ?? 0;
+      const bCount = ixCounts.get(b.id) ?? 0;
+      return bCount - aCount; // most networks first
+    });
+
+  // === Facility network counts ===
+  const facNetworkCounts = new Map<number, number>();
+  filteredNetworks.forEach((net) => {
+    net.facIds.forEach((fid) => {
+      const prev = facNetworkCounts.get(fid) ?? 0;
+      facNetworkCounts.set(fid, prev + 1);
+    });
+  });
+
+  // === Group facilities by organization ===
+  const orgMap = new Map<
+    string,
+    { org: string; facilities: { fac: any; networkCount: number }[]; totalNetworks: number }
+  >();
+
+  facData.forEach((fac) => {
+    const org = classifyOrg(fac.name);
+    const count = facNetworkCounts.get(fac.id) ?? 0;
+    if (!orgMap.has(org)) {
+      orgMap.set(org, { org, facilities: [], totalNetworks: 0 });
+    }
+    const g = orgMap.get(org)!;
+    g.facilities.push({ fac, networkCount: count });
+    g.totalNetworks += count;
+  });
+
+  const orgGroups = Array.from(orgMap.values()).map((g) => {
+    g.facilities.sort((a, b) => b.networkCount - a.networkCount);
+    return g;
+  });
+
+  // Equinix first, then by totalNetworks
+  orgGroups.sort((a, b) => {
+    if (a.org === "Equinix") return -1;
+    if (b.org === "Equinix") return 1;
+    return b.totalNetworks - a.totalNetworks;
+  });
+
+  const facColumnsFlat = orgGroups.flatMap((g) => g.facilities.map((f) => f.fac));
+
+  // === Render ===
+  return (
+    <div
+      style={{
+        minHeight: "100vh",
+        background: "#020617",
+        color: "#e5e7eb",
+        display: "flex",
+        flexDirection: "column",
+      }}
+    >
+      <header
+        style={{
+          padding: 16,
+          borderBottom: "1px solid #1f2937",
+          display: "flex",
+          justifyContent: "space-between",
+        }}
+      >
+        <div>
+          <h2 style={{ margin: 0, fontSize: 20 }}>PeeringDB – Metro ASN × IX / Facility Matrix</h2>
+          <div style={{ fontSize: 12, color: "#9ca3af" }}>
+            Metro: <strong>{metro.city}</strong> ({metro.country})
+          </div>
+        </div>
+        <div style={{ fontSize: 12, color: "#9ca3af" }}>
+          {(Object.keys(METROS) as MetroKey[]).map((m) => (
+            <label key={m} style={{ marginLeft: 8 }}>
+              <input
+                type="radio"
+                name="metro"
+                checked={selectedMetro === m}
+                onChange={() => setSelectedMetro(m)}
+              />{" "}
+              {m}
+            </label>
+          ))}
+        </div>
+      </header>
+
+      <main style={{ display: "flex", flex: 1, overflow: "hidden" }}>
+        {/* Sidebar */}
+        <aside
+          style={{
+            width: 280,
+            borderRight: "1px solid #1f2937",
+            padding: 12,
+            fontSize: 12,
+          }}
+        >
+          <div style={{ marginBottom: 12 }}>
+            <div>IXes in metro: {ixData.length}</div>
+            <div>Facilities in metro: {facData.length}</div>
+          </div>
+
+          {error && <div style={{ color: "salmon", marginBottom: 12 }}>Error: {error}</div>}
+
+          <button
+            style={{
+              width: "100%",
+              padding: 8,
+              background: "#065f46",
+              color: "#bbf7d0",
+              borderRadius: 4,
+              border: "1px solid #22c55e",
+              cursor: allNetLoading || loading ? "wait" : "pointer",
+              opacity: allNetLoading || loading ? 0.7 : 1,
+            }}
+            onClick={handleLoadAllNetworks}
+            disabled={allNetLoading || loading || ixData.length === 0}
+          >
+            {allNetLoading ? "Loading all networks…" : "Load all networks in metro"}
+          </button>
+
+          {allNetError && (
+            <div style={{ marginTop: 8, color: "#fecaca" }}>Error: {allNetError}</div>
+          )}
+
+          {metroNetworks.length > 0 && (
+            <>
+              <div style={{ marginTop: 12 }}>Filter by ASNs (multi):</div>
+              <input
+                style={{
+                  width: "100%",
+                  padding: 4,
+                  background: "#020617",
+                  border: "1px solid #374151",
+                  color: "#e5e7eb",
+                }}
+                placeholder="e.g. 13335 15169"
+                value={filterText}
+                onChange={(e) => setFilterText(e.target.value)}
+              />
+              <div style={{ marginTop: 6, fontSize: 11, color: "#9ca3af" }}>
+                Networks: {filteredNetworks.length} / {metroNetworks.length}
+              </div>
+            </>
+          )}
+        </aside>
+
+        {/* Main area */}
+        <section style={{ flex: 1, padding: 12, overflow: "auto", fontSize: 12 }}>
+          {/* ASN × IX matrix */}
+          {filteredNetworks.length > 0 && ixColumnsSorted.length > 0 && (
+            <div style={{ marginBottom: 24 }}>
+              <h3 style={{ marginBottom: 6 }}>ASN × IX – capacity in Gbps (green = present)</h3>
+              <div
+                style={{
+                  overflow: "auto",
+                  border: "1px solid #1f2937",
+                  borderRadius: 4,
+                }}
+              >
+                <table
+                  style={{
+                    width: "100%",
+                    minWidth: 600,
+                    borderCollapse: "collapse",
+                    fontSize: 11,
+                  }}
+                >
+                  <thead>
+                    <tr style={{ background: "#020617" }}>
+                      <th style={{ textAlign: "left", padding: 4 }}>ASN</th>
+                      <th style={{ textAlign: "left", padding: 4 }}>Name</th>
+                      {ixColumnsSorted.map((ix) => {
+                        const count = ixCounts.get(ix.id) ?? 0;
+                        return (
+                          <th key={ix.id} style={{ textAlign: "center", padding: 4 }}>
+                            <div>{ix.name}</div>
+                            <div style={{ fontSize: 10, color: "#9ca3af" }}>{count} nets</div>
+                          </th>
+                        );
+                      })}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredNetworks.map((net, rowIndex) => (
+                      <tr
+                        key={net.netId}
+                        style={{
+                          backgroundColor: rowIndex % 2 === 0 ? "#020617" : "#111827",
+                        }}
+                      >
+                        <td style={{ padding: 4 }}>{net.asn ?? "?"}</td>
+                        <td style={{ padding: 4 }}>
+                          {net.asn
+                            ? net.name
+                              ? `${net.asn}, ${net.name}`
+                              : `${net.asn}`
+                            : ""}
+                        </td>
+                        {ixColumnsSorted.map((ix) => {
+                          const capMbps = net.ixCaps.get(ix.id) ?? 0;
+                          const capGbps = capMbps / 1000;
+                          const present = capGbps > 0;
+                          return (
+                            <td
+                              key={ix.id}
+                              style={{
+                                padding: 4,
+                                textAlign: "center",
+                                backgroundColor: present ? "#14532d" : "transparent",
+                                color: present ? "#bbf7d0" : "#6b7280",
+                                fontWeight: present ? 600 : 400,
+                              }}
+                            >
+                              {present ? Math.round(capGbps * 10) / 10 : "–"}
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* ASN × Facility matrix with org grouping */}
+          {filteredNetworks.length > 0 && facColumnsFlat.length > 0 && (
+            <div>
+              <h3 style={{ marginBottom: 6 }}>ASN × Facility – presence by organization (green = present)</h3>
+              <div
+                style={{
+                  overflow: "auto",
+                  border: "1px solid #1f2937",
+                  borderRadius: 4,
+                }}
+              >
+                <table
+                  style={{
+                    width: "100%",
+                    minWidth: 600,
+                    borderCollapse: "collapse",
+                    fontSize: 11,
+                  }}
+                >
+                  <thead>
+                    {/* Org row */}
+                    <tr style={{ background: "#020617" }}>
+                      <th style={{ textAlign: "left", padding: 4 }} rowSpan={2}>
+                        ASN
+                      </th>
+                      <th style={{ textAlign: "left", padding: 4 }} rowSpan={2}>
+                        Name
+                      </th>
+                      {orgGroups.map((g) => (
+                        <th
+                          key={g.org}
+                          style={{
+                            textAlign: "center",
+                            padding: 4,
+                            borderBottom: "1px solid #1f2937",
+                          }}
+                          colSpan={g.facilities.length || 1}
+                        >
+                          <div>{g.org}</div>
+                          <div style={{ fontSize: 10, color: "#9ca3af" }}>
+                            {g.totalNetworks} nets
+                          </div>
+                        </th>
+                      ))}
+                    </tr>
+                    {/* Facility row */}
+                    <tr style={{ background: "#020617" }}>
+                      {orgGroups.flatMap((g) =>
+                        g.facilities.map((f) => {
+                          const facId = f.fac.id;
+                          const facCount = facNetworkCounts.get(facId) ?? 0;
+                          return (
+                            <th
+                              key={f.fac.id}
+                              style={{
+                                textAlign: "center",
+                                padding: 4,
+                                borderBottom: "1px solid #1f2937",
+                              }}
+                            >
+                              <div>{f.fac.name}</div>
+                              <div style={{ fontSize: 10, color: "#9ca3af" }}>
+                                {facCount} nets
+                              </div>
+                            </th>
+                          );
+                        })
+                      )}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredNetworks.map((net, rowIndex) => (
+                      <tr
+                        key={net.netId}
+                        style={{
+                          backgroundColor: rowIndex % 2 === 0 ? "#020617" : "#111827",
+                        }}
+                      >
+                        <td style={{ padding: 4 }}>{net.asn ?? "?"}</td>
+                        <td style={{ padding: 4 }}>
+                          {net.asn
+                            ? net.name
+                              ? `${net.asn}, ${net.name}`
+                              : `${net.asn}`
+                            : ""}
+                        </td>
+                        {orgGroups.flatMap((g) =>
+                          g.facilities.map((f) => {
+                            const present = net.facIds.has(f.fac.id);
+                            return (
+                              <td
+                                key={`${net.netId}-${f.fac.id}`}
+                                style={{
+                                  padding: 4,
+                                  textAlign: "center",
+                                  backgroundColor: present ? "#14532d" : "transparent",
+                                  color: present ? "#bbf7d0" : "#6b7280",
+                                  fontWeight: present ? 600 : 400,
+                                }}
+                              >
+                                {present ? "●" : "–"}
+                              </td>
+                            );
+                          })
+                        )}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {metroNetworks.length === 0 && !allNetLoading && !error && (
+            <div style={{ fontSize: 12, color: "#9ca3af" }}>
+              Click &quot;Load all networks in metro&quot; to build the matrices.
+            </div>
+          )}
+        </section>
+      </main>
+    </div>
+  );
+};
+
+export default PeeringDBDashboard;
