@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
+import { fetchPeeringDb } from "./peeringdbApi";
 
 export default function DetailView() {
   const { asn, ix_id, fac_id } = useParams();
@@ -12,21 +13,18 @@ export default function DetailView() {
 
       try {
         if (asn) {
-          const resp = await fetch(`https://www.peeringdb.com/api/net?asn=${asn}`);
-          const json = await resp.json();
-          setData(json.data?.[0] || null);
+          const { data: nets } = await fetchPeeringDb<any>("net", { asn });
+          setData(nets?.[0] || null);
         }
 
         if (ix_id) {
-          const resp = await fetch(`https://www.peeringdb.com/api/ix?id=${ix_id}`);
-          const json = await resp.json();
-          setData(json.data?.[0] || null);
+          const { data: ixs } = await fetchPeeringDb<any>("ix", { id: ix_id });
+          setData(ixs?.[0] || null);
         }
 
         if (fac_id) {
-          const resp = await fetch(`https://www.peeringdb.com/api/fac?id=${fac_id}`);
-          const json = await resp.json();
-          setData(json.data?.[0] || null);
+          const { data: facs } = await fetchPeeringDb<any>("fac", { id: fac_id });
+          setData(facs?.[0] || null);
         }
       } catch (e) {
         console.error(e);

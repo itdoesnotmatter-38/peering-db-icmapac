@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { fetchPeeringDb } from "./peeringdbApi";
 
 /**
  * Theme – dark but with clearer contrast and borders.
@@ -246,19 +247,19 @@ const PeeringDBDashboard: React.FC = () => {
         const chunks = chunk(orgIds, 50);
         const acc: Record<number, any> = {};
         for (const ch of chunks) {
-          const url = `https://www.peeringdb.com/api/org?id__in=${ch.join(",")}`;
-          const resp = await fetch(url);
-          if (!resp.ok) continue;
-          const json = await resp.json();
-          (json.data || []).forEach((org: any) => {
+          const { data } = await fetchPeeringDb<any>("org", {
+            id__in: ch.join(","),
+          });
+          data.forEach((org: any) => {
             if (org && typeof org.id === "number") {
               acc[org.id] = org;
             }
           });
         }
         setOrgLookup(acc);
-      } catch (e) {
+      } catch (e: any) {
         console.warn("Error fetching org data", e);
+        setError(e?.message || "Error fetching org data.");
       }
     };
 
@@ -300,38 +301,27 @@ const PeeringDBDashboard: React.FC = () => {
         if (!needsIx && !needsFac) continue;
 
         const cfg = METROS[m];
-        const ixUrl = `https://www.peeringdb.com/api/ix?country=${cfg.country}&city=${encodeURIComponent(
-          cfg.city
-        )}`;
-      // For Hong Kong, fetch facilities by country only.
-// For all other metros, keep using country + city.
-const facUrl =
-  cfg.country === "HK"
-    ? `https://www.peeringdb.com/api/fac?country=${cfg.country}`
-    : `https://www.peeringdb.com/api/fac?country=${cfg.country}&city=${encodeURIComponent(
-        cfg.city
-      )}`;
+        const ixParams = { country: cfg.country, city: cfg.city };
+        const facParams =
+          cfg.country === "HK" || cfg.country === "SG"
+            ? { country: cfg.country }
+            : { country: cfg.country, city: cfg.city };
 
-        const [ixResp, facResp] = await Promise.all([fetch(ixUrl), fetch(facUrl)]);
-
-        if (!ixResp.ok) {
-          if (ixResp.status === 429) {
-            throw new Error("IX API error: 429 (PeeringDB rate limit – try again later)");
-          }
-          throw new Error(`IX API error: ${ixResp.status}`);
-        }
-        if (!facResp.ok) {
-          if (facResp.status === 429) {
-            throw new Error("FAC API error: 429 (PeeringDB rate limit – try again later)");
-          }
-          throw new Error(`FAC API error: ${facResp.status}`);
+        let ixResult: { data: any[] };
+        let facResult: { data: any[] };
+        try {
+          [ixResult, facResult] = await Promise.all([
+            fetchPeeringDb<any>("ix", ixParams),
+            fetchPeeringDb<any>("fac", facParams),
+          ]);
+        } catch (err: any) {
+          throw new Error(
+            `Failed to load IX/FAC for ${cfg.city} (${cfg.country}): ${err?.message || err}`
+          );
         }
 
-        const ixJson = await ixResp.json();
-        const facJson = await facResp.json();
-
-        workingIxCache[m] = ixJson.data || [];
-        workingFacCache[m] = facJson.data || [];
+        workingIxCache[m] = ixResult.data || [];
+        workingFacCache[m] = facResult.data || [];
       }
 
       // Build union IX/FAC for the selectedMetros (for this load).
@@ -374,11 +364,15 @@ const facUrl =
       const ixChunks = chunk(ixIds, 20);
       for (const ch of ixChunks) {
         const param = ch.join(",");
-        const url = `https://www.peeringdb.com/api/netixlan?ix_id__in=${param}`;
-        const resp = await fetch(url);
-        if (!resp.ok) continue;
-        const json = await resp.json();
-        const rows = json.data || [];
+        let rows: any[] = [];
+        try {
+          ({ data: rows } = await fetchPeeringDb<any>("netixlan", {
+            ix_id__in: param,
+            all: 1,
+          }));
+        } catch (err: any) {
+          throw new Error(`netixlan fetch failed for ix_id__in=${param}: ${err?.message || err}`);
+        }
 
         rows.forEach((row: any) => {
           const netId = row.net_id;
@@ -409,11 +403,15 @@ const facUrl =
         const facChunks = chunk(facIds, 20);
         for (const ch of facChunks) {
           const param = ch.join(",");
-          const url = `https://www.peeringdb.com/api/netfac?fac_id__in=${param}`;
-          const resp = await fetch(url);
-          if (!resp.ok) continue;
-          const json = await resp.json();
-          const rows = json.data || [];
+          let rows: any[] = [];
+          try {
+            ({ data: rows } = await fetchPeeringDb<any>("netfac", {
+              fac_id__in: param,
+              all: 1,
+            }));
+          } catch (err: any) {
+            throw new Error(`netfac fetch failed for fac_id__in=${param}: ${err?.message || err}`);
+          }
 
           rows.forEach((row: any) => {
             const netId = row.net_id;
@@ -435,39 +433,35 @@ const facUrl =
         }
       }
 
-      // 3) Enrich network names from /net?asn__in=
-      const allAsns = Array.from(
-        new Set(
-          Array.from(netMap.values())
-            .map((n) => n.asn)
-            .filter((a): a is number => typeof a === "number")
-        )
-      );
-      const asnChunks = chunk(allAsns, 50);
+      // 3) Enrich network names + ASN from /net?id__in=
+      const netIds = Array.from(netMap.keys());
+      const netIdChunks = chunk(netIds, 50);
 
-      for (const asnChunk of asnChunks) {
+      for (const idChunk of netIdChunks) {
+        const param = idChunk.join(",");
+        let nets: any[] = [];
         try {
-          const param = asnChunk.join(",");
-          const r = await fetch(`https://www.peeringdb.com/api/net?asn__in=${param}`);
-          if (!r.ok) continue;
-          const j = await r.json();
-          const nets: any[] = j.data || [];
-
-          nets.forEach((netObj) => {
-            const asn = netObj.asn;
-            if (!asn) return;
-            const label: string | undefined = netObj.org || netObj.name;
-            if (!label) return;
-
-            Array.from(netMap.values())
-              .filter((n) => n.asn === asn)
-              .forEach((n) => {
-                n.name = label;
-              });
-          });
-        } catch {
-          // ignore individual failures
+          ({ data: nets } = await fetchPeeringDb<any>("net", {
+            id__in: param,
+          }));
+        } catch (err: any) {
+          throw new Error(`net fetch failed for id__in=${param}: ${err?.message || err}`);
         }
+
+        nets.forEach((netObj) => {
+          const netId = netObj.id;
+          if (!netId) return;
+          const entry = netMap.get(netId);
+          if (!entry) return;
+
+          if (typeof netObj.asn === "number") {
+            entry.asn = netObj.asn;
+          }
+          const label: string | undefined = netObj.org || netObj.name;
+          if (label) {
+            entry.name = label;
+          }
+        });
       }
 
       const networks = Array.from(netMap.values())
