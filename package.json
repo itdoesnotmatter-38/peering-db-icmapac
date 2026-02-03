@@ -11,6 +11,8 @@
     "@types/node": "^16.18.126",
     "@types/react": "^19.2.6",
     "@types/react-dom": "^19.2.3",
+    "@vercel/blob": "^2.0.1",
+    "pg": "^8.18.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "react-router-dom": "^7.9.6",
@@ -24,7 +26,8 @@
     "test": "react-scripts test",
     "eject": "react-scripts eject",
     "sg:check": "node scripts/sg_sanity_check.mjs",
-    "metro:check": "node scripts/sg_sanity_check.mjs"
+    "metro:check": "node scripts/sg_sanity_check.mjs",
+    "snapshot:sample": "node scripts/snapshot_sample_global.mjs"
   },
   "eslintConfig": {
     "extends": [

@@ -1,0 +1,13 @@
+{
+  "crons": [
+    {
+      "path": "/api/snapshots/run",
+      "schedule": "5 16 * * *"
+    }
+  ],
+  "functions": {
+    "api/snapshots/run.js": {
+      "maxDuration": 300
+    }
+  }
+}
