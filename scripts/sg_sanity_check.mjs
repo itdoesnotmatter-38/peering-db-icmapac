@@ -101,8 +101,8 @@ const main = async () => {
   const ixIds = ixResult.data.map((ix) => ix.id).filter((id) => typeof id === "number");
   const facIds = facResult.data.map((fac) => fac.id).filter((id) => typeof id === "number");
 
-  console.log(`IX count (SG city): ${ixIds.length}`);
-  console.log(`Facility count (SG country): ${facIds.length}`);
+  console.log(`IX count (city): ${ixIds.length}`);
+  console.log(`Facility count (${metro.facCountryOnly ? "country" : "city"}): ${facIds.length}`);
 
   const netixlan = await fetchAllByChunks("netixlan", "ix_id__in", ixIds, "netixlan");
   const netfac = await fetchAllByChunks("netfac", "fac_id__in", facIds, "netfac");
