@@ -36,6 +36,8 @@ Defaults are used if not provided:
 - `SNAPSHOT_BLOB_PREFIX=snapshots`
 - `SNAPSHOT_MAX_PAGES=5000`
 - `SNAPSHOT_PAGE_DELAY_MS=150`
+- `PEERINGDB_MAX_RETRIES=50`
+- `PEERINGDB_MAX_RETRY_TIME_MS=1200000`
 
 ## Manual execution
 From CLI:

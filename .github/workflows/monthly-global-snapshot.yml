@@ -26,7 +26,9 @@ jobs:
       SNAPSHOT_TIMEZONE: Asia/Singapore
       SNAPSHOT_BLOB_PREFIX: snapshots
       SNAPSHOT_MAX_PAGES: "5000"
-      SNAPSHOT_PAGE_DELAY_MS: "150"
+      SNAPSHOT_PAGE_DELAY_MS: "1000"
+      PEERINGDB_MAX_RETRIES: "120"
+      PEERINGDB_MAX_RETRY_TIME_MS: "3600000"
     steps:
       - name: Checkout
         uses: actions/checkout@v4

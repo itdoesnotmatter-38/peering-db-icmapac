@@ -1,8 +1,12 @@
 const BASE_URL = process.env.PEERINGDB_API_BASE_URL || "https://www.peeringdb.com/api";
 const DEFAULT_LIMIT = 250;
-const MAX_RETRIES = 5;
+const MAX_RETRIES = Number.parseInt(process.env.PEERINGDB_MAX_RETRIES || "50", 10);
 const BASE_DELAY_MS = 500;
-const MAX_DELAY_MS = 15000;
+const MAX_DELAY_MS = Number.parseInt(process.env.PEERINGDB_MAX_DELAY_MS || "30000", 10);
+const MAX_RETRY_TIME_MS = Number.parseInt(
+  process.env.PEERINGDB_MAX_RETRY_TIME_MS || String(20 * 60 * 1000),
+  10
+);
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -46,9 +50,9 @@ const getRetryDelayMs = (resp, body, attempt) => {
 const shouldRetry = (status) => status === 429 || status >= 500;
 
 const fetchWithRetry = async (url, options = {}) => {
-  let lastError = null;
+  const startTime = Date.now();
 
-  for (let attempt = 0; attempt <= MAX_RETRIES; attempt += 1) {
+  for (let attempt = 0; ; attempt += 1) {
     try {
       const resp = await fetch(url, options);
       let body = null;
@@ -56,21 +60,26 @@ const fetchWithRetry = async (url, options = {}) => {
         body = await resp.json().catch(() => null);
       }
 
-      if (resp.ok || !shouldRetry(resp.status) || attempt === MAX_RETRIES) {
+      if (resp.ok || !shouldRetry(resp.status)) {
         return { resp, body };
       }
 
-      await sleep(getRetryDelayMs(resp, body, attempt));
+      const delayMs = getRetryDelayMs(resp, body, attempt);
+      const timedOut = Date.now() + delayMs - startTime > MAX_RETRY_TIME_MS;
+      if (attempt >= MAX_RETRIES || timedOut) {
+        return { resp, body };
+      }
+
+      await sleep(delayMs);
     } catch (err) {
-      lastError = err;
-      if (attempt === MAX_RETRIES) {
+      const delayMs = getRetryDelayMs(null, null, attempt);
+      const timedOut = Date.now() + delayMs - startTime > MAX_RETRY_TIME_MS;
+      if (attempt >= MAX_RETRIES || timedOut) {
         throw err;
       }
-      await sleep(getRetryDelayMs(null, null, attempt));
+      await sleep(delayMs);
     }
   }
-
-  throw lastError || new Error("Failed to reach PeeringDB after retries");
 };
 
 const fetchAllPages = async ({
