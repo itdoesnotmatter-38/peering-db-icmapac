@@ -17,6 +17,7 @@ const {
 const DEFAULTS = {
   timezone: process.env.SNAPSHOT_TIMEZONE || "Asia/Singapore",
   blobPrefixRoot: process.env.SNAPSHOT_BLOB_PREFIX || "snapshots",
+  pageLimit: Number.parseInt(process.env.SNAPSHOT_PAGE_LIMIT || "5000", 10),
   maxPages: Number.parseInt(process.env.SNAPSHOT_MAX_PAGES || "5000", 10),
   pageDelayMs: Number.parseInt(process.env.SNAPSHOT_PAGE_DELAY_MS || "150", 10),
 };
@@ -119,12 +120,13 @@ const runGlobalSnapshot = async ({ force = false, now = new Date(), config = {} 
     const orgIdCounts = new Map();
     let netCount = 0;
 
-    await fetchAllPages({
-      obj: "net",
-      params: {},
-      apiKey: process.env.PEERINGDB_API_KEY,
-      maxPages: snapshotConfig.maxPages,
-      pageDelayMs: snapshotConfig.pageDelayMs,
+  await fetchAllPages({
+    obj: "net",
+    params: {},
+    apiKey: process.env.PEERINGDB_API_KEY,
+    limit: snapshotConfig.pageLimit,
+    maxPages: snapshotConfig.maxPages,
+    pageDelayMs: snapshotConfig.pageDelayMs,
       onPage: async (rows) => {
         rows.forEach((row) => {
           netGzip.write(`${JSON.stringify(row)}\n`);
@@ -144,12 +146,13 @@ const runGlobalSnapshot = async ({ force = false, now = new Date(), config = {} 
     const countryCounts = new Map();
     let orgCount = 0;
 
-    await fetchAllPages({
-      obj: "org",
-      params: {},
-      apiKey: process.env.PEERINGDB_API_KEY,
-      maxPages: snapshotConfig.maxPages,
-      pageDelayMs: snapshotConfig.pageDelayMs,
+  await fetchAllPages({
+    obj: "org",
+    params: {},
+    apiKey: process.env.PEERINGDB_API_KEY,
+    limit: snapshotConfig.pageLimit,
+    maxPages: snapshotConfig.maxPages,
+    pageDelayMs: snapshotConfig.pageDelayMs,
       onPage: async (rows) => {
         rows.forEach((row) => {
           orgGzip.write(`${JSON.stringify(row)}\n`);
