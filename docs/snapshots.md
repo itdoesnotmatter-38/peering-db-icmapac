@@ -1,46 +1,61 @@
 # Monthly Snapshots (Global)
 
 ## Overview
-This job captures a global PeeringDB snapshot on the **last day of each month** (Singapore time).
+This system captures a global PeeringDB snapshot on the last day of each month in Singapore time.
 
-Data is stored in two places:
-- **Raw data** (full JSON) in Vercel Blob
-- **Aggregates** in Postgres for trend charts
+Storage split:
+- Raw records in Vercel Blob (`net`, `org`)
+- Aggregates in Postgres for trend charts
 
-## What is captured
-- `net` (all networks worldwide)
-- `org` (all organizations worldwide)
+## Scheduler
+Primary scheduler is GitHub Actions:
+- Workflow: `.github/workflows/monthly-global-snapshot.yml`
+- Trigger: daily at `16:10 UTC` (which is `00:10` Singapore)
+- The runner skips unless it is the last Singapore calendar day of the month.
 
-Aggregates stored in Postgres:
-- Total network count
-- Counts by `info_type` (content/ISP/etc)
-- Counts by origin country (from org.country)
-
-## Cron schedule
-The cron runs daily at **00:05 Singapore time** and only executes on the last day of the month.
-
-## Required env vars
+## Required GitHub repository secrets
+Configure these in GitHub repository settings:
 - `PEERINGDB_API_KEY`
 - `POSTGRES_URL`
 - `BLOB_READ_WRITE_TOKEN`
-- `SNAPSHOT_TIMEZONE` (optional, defaults to `Asia/Singapore`)
-- `SNAPSHOT_BLOB_PREFIX` (optional, defaults to `snapshots`)
-- `SNAPSHOT_MAX_PAGES` (optional safety limit)
-- `SNAPSHOT_PAGE_DELAY_MS` (optional, throttling control)
 
-## Run manually
-To trigger once (bypass last-day check):
+## Captured data
+Raw files written to Blob prefix `${SNAPSHOT_BLOB_PREFIX}/${snapshot_date}`:
+- `net.jsonl.gz`
+- `org.jsonl.gz`
+- `manifest.json`
 
+Aggregates written to Postgres:
+- `pdb_snapshot_runs`
+- `pdb_snapshot_network_types`
+- `pdb_snapshot_origin_countries`
+
+## Optional environment variables
+Defaults are used if not provided:
+- `SNAPSHOT_TIMEZONE=Asia/Singapore`
+- `SNAPSHOT_BLOB_PREFIX=snapshots`
+- `SNAPSHOT_MAX_PAGES=5000`
+- `SNAPSHOT_PAGE_DELAY_MS=150`
+
+## Manual execution
+From CLI:
+
+```bash
+npm run snapshot:run
+npm run snapshot:run -- --force
 ```
-https://<your-domain>/api/snapshots/run?force=1
-```
 
-Optional: set `CRON_SECRET` and call with `Authorization: Bearer <secret>` or `?secret=<secret>`.
+From GitHub Actions UI:
+- Open workflow `Monthly Global PeeringDB Snapshot`
+- Click `Run workflow`
+- Set `force=true` to bypass last-day check
 
-## Sample export (local)
-Generate a small global sample (ASN/name/origin/type fields):
+## Vercel endpoint (optional)
+`/api/snapshots/run` still exists for ad hoc runs, but GitHub Actions is the main path for global snapshot duration.
 
-```
+## Sample export for field validation
+```bash
 export PEERINGDB_API_KEY="..."
 npm run snapshot:sample -- /tmp/pdb_snapshot_global_sample.json 50
 ```
+Fields include `asn`, `network_name`, `network_type`, `org_name`, `org_country`, `org_city`.

@@ -27,7 +27,8 @@
     "eject": "react-scripts eject",
     "sg:check": "node scripts/sg_sanity_check.mjs",
     "metro:check": "node scripts/sg_sanity_check.mjs",
-    "snapshot:sample": "node scripts/snapshot_sample_global.mjs"
+    "snapshot:sample": "node scripts/snapshot_sample_global.mjs",
+    "snapshot:run": "node scripts/run_snapshot_job.js"
   },
   "eslintConfig": {
     "extends": [

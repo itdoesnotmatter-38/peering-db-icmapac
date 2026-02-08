@@ -1,0 +1,49 @@
+name: Monthly Global PeeringDB Snapshot
+
+on:
+  schedule:
+    - cron: "10 16 * * *"
+  workflow_dispatch:
+    inputs:
+      force:
+        description: "Force run even if today is not last day of month in Singapore"
+        required: false
+        type: boolean
+        default: false
+
+concurrency:
+  group: peeringdb-global-snapshot
+  cancel-in-progress: false
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    env:
+      PEERINGDB_API_KEY: ${{ secrets.PEERINGDB_API_KEY }}
+      POSTGRES_URL: ${{ secrets.POSTGRES_URL }}
+      BLOB_READ_WRITE_TOKEN: ${{ secrets.BLOB_READ_WRITE_TOKEN }}
+      SNAPSHOT_TIMEZONE: Asia/Singapore
+      SNAPSHOT_BLOB_PREFIX: snapshots
+      SNAPSHOT_MAX_PAGES: "5000"
+      SNAPSHOT_PAGE_DELAY_MS: "150"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run snapshot
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.force }}" = "true" ]; then
+            npm run snapshot:run -- --force
+          else
+            npm run snapshot:run
+          fi
