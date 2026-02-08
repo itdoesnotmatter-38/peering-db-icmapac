@@ -34,6 +34,7 @@ Aggregates written to Postgres:
 Defaults are used if not provided:
 - `SNAPSHOT_TIMEZONE=Asia/Singapore`
 - `SNAPSHOT_BLOB_PREFIX=snapshots`
+- `SNAPSHOT_BLOB_ACCESS=public`
 - `SNAPSHOT_PAGE_LIMIT=5000`
 - `SNAPSHOT_MAX_PAGES=5000`
 - `SNAPSHOT_PAGE_DELAY_MS=150`

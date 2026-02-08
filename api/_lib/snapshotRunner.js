@@ -17,6 +17,7 @@ const {
 const DEFAULTS = {
   timezone: process.env.SNAPSHOT_TIMEZONE || "Asia/Singapore",
   blobPrefixRoot: process.env.SNAPSHOT_BLOB_PREFIX || "snapshots",
+  blobAccess: process.env.SNAPSHOT_BLOB_ACCESS || "public",
   pageLimit: Number.parseInt(process.env.SNAPSHOT_PAGE_LIMIT || "5000", 10),
   maxPages: Number.parseInt(process.env.SNAPSHOT_MAX_PAGES || "5000", 10),
   pageDelayMs: Number.parseInt(process.env.SNAPSHOT_PAGE_DELAY_MS || "150", 10),
@@ -43,10 +44,10 @@ const createGzipWriter = async (filePath) => {
   return { gzip, done };
 };
 
-const uploadFile = async (blobPath, filePath, contentType) => {
+const uploadFile = async (blobPath, filePath, contentType, blobAccess) => {
   const stream = fs.createReadStream(filePath);
   const result = await put(blobPath, stream, {
-    access: "private",
+    access: blobAccess,
     addRandomSuffix: false,
     contentType,
   });
@@ -120,13 +121,13 @@ const runGlobalSnapshot = async ({ force = false, now = new Date(), config = {} 
     const orgIdCounts = new Map();
     let netCount = 0;
 
-  await fetchAllPages({
-    obj: "net",
-    params: {},
-    apiKey: process.env.PEERINGDB_API_KEY,
-    limit: snapshotConfig.pageLimit,
-    maxPages: snapshotConfig.maxPages,
-    pageDelayMs: snapshotConfig.pageDelayMs,
+    await fetchAllPages({
+      obj: "net",
+      params: {},
+      apiKey: process.env.PEERINGDB_API_KEY,
+      limit: snapshotConfig.pageLimit,
+      maxPages: snapshotConfig.maxPages,
+      pageDelayMs: snapshotConfig.pageDelayMs,
       onPage: async (rows) => {
         rows.forEach((row) => {
           netGzip.write(`${JSON.stringify(row)}\n`);
@@ -146,13 +147,13 @@ const runGlobalSnapshot = async ({ force = false, now = new Date(), config = {} 
     const countryCounts = new Map();
     let orgCount = 0;
 
-  await fetchAllPages({
-    obj: "org",
-    params: {},
-    apiKey: process.env.PEERINGDB_API_KEY,
-    limit: snapshotConfig.pageLimit,
-    maxPages: snapshotConfig.maxPages,
-    pageDelayMs: snapshotConfig.pageDelayMs,
+    await fetchAllPages({
+      obj: "org",
+      params: {},
+      apiKey: process.env.PEERINGDB_API_KEY,
+      limit: snapshotConfig.pageLimit,
+      maxPages: snapshotConfig.maxPages,
+      pageDelayMs: snapshotConfig.pageDelayMs,
       onPage: async (rows) => {
         rows.forEach((row) => {
           orgGzip.write(`${JSON.stringify(row)}\n`);
@@ -170,8 +171,18 @@ const runGlobalSnapshot = async ({ force = false, now = new Date(), config = {} 
     await orgDone;
 
     const blobPrefix = `${snapshotConfig.blobPrefixRoot}/${snapshotDate}`;
-    const netUrl = await uploadFile(`${blobPrefix}/net.jsonl.gz`, netPath, "application/gzip");
-    const orgUrl = await uploadFile(`${blobPrefix}/org.jsonl.gz`, orgPath, "application/gzip");
+    const netUrl = await uploadFile(
+      `${blobPrefix}/net.jsonl.gz`,
+      netPath,
+      "application/gzip",
+      snapshotConfig.blobAccess
+    );
+    const orgUrl = await uploadFile(
+      `${blobPrefix}/org.jsonl.gz`,
+      orgPath,
+      "application/gzip",
+      snapshotConfig.blobAccess
+    );
 
     const manifest = {
       snapshot_date: snapshotDate,
@@ -186,7 +197,7 @@ const runGlobalSnapshot = async ({ force = false, now = new Date(), config = {} 
     };
 
     await put(`${blobPrefix}/manifest.json`, JSON.stringify(manifest, null, 2), {
-      access: "private",
+      access: snapshotConfig.blobAccess,
       addRandomSuffix: false,
       contentType: "application/json",
     });
