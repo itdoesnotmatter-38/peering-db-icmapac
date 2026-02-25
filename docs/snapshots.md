@@ -10,7 +10,7 @@ Storage split:
 ## Scheduler
 Primary scheduler is GitHub Actions:
 - Workflow: `.github/workflows/monthly-global-snapshot.yml`
-- Trigger: `28-31` each month at `16:10 UTC` (which is `00:10` Singapore)
+- Trigger: `27-31` each month at `16:10 UTC` (which is `00:10` Singapore)
 - The runner skips unless it is the last Singapore calendar day of the month.
 
 ## Required GitHub repository secrets
