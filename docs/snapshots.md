@@ -57,6 +57,10 @@ From GitHub Actions UI:
 ## Vercel endpoint (optional)
 `/api/snapshots/run` still exists for ad hoc runs, but GitHub Actions is the main path for global snapshot duration.
 
+Portal download API/UI:
+- `GET /api/snapshots/latest` returns recent completed snapshot metadata with direct Blob URLs.
+- Dashboard sidebar shows latest downloadable files (`net.jsonl.gz`, `org.jsonl.gz`, `manifest.json`).
+
 ## Sample export for field validation
 ```bash
 export PEERINGDB_API_KEY="..."

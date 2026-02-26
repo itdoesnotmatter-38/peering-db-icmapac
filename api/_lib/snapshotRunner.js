@@ -9,6 +9,7 @@ const {
   ensureSchema,
   getRun,
   upsertRun,
+  upsertRunWithUrls,
   clearAggregates,
   insertTypeCounts,
   insertCountryCounts,
@@ -196,7 +197,7 @@ const runGlobalSnapshot = async ({ force = false, now = new Date(), config = {} 
       },
     };
 
-    await put(`${blobPrefix}/manifest.json`, JSON.stringify(manifest, null, 2), {
+    const manifestResult = await put(`${blobPrefix}/manifest.json`, JSON.stringify(manifest, null, 2), {
       access: snapshotConfig.blobAccess,
       addRandomSuffix: false,
       contentType: "application/json",
@@ -205,7 +206,7 @@ const runGlobalSnapshot = async ({ force = false, now = new Date(), config = {} 
     await insertTypeCounts(snapshotDate, typeCounts);
     await insertCountryCounts(snapshotDate, countryCounts);
 
-    await upsertRun({
+    await upsertRunWithUrls({
       snapshotDate,
       status: "complete",
       startedAt: now.toISOString(),
@@ -213,6 +214,9 @@ const runGlobalSnapshot = async ({ force = false, now = new Date(), config = {} 
       netCount,
       orgCount,
       blobPrefix,
+      netUrl,
+      orgUrl,
+      manifestUrl: manifestResult.url,
     });
 
     return {

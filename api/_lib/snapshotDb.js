@@ -15,8 +15,24 @@ const ensureSchema = async () => {
         status TEXT NOT NULL,
         net_count INTEGER,
         org_count INTEGER,
-        blob_prefix TEXT
+        blob_prefix TEXT,
+        net_url TEXT,
+        org_url TEXT,
+        manifest_url TEXT
       );
+    `);
+
+    await client.query(`
+      ALTER TABLE pdb_snapshot_runs
+      ADD COLUMN IF NOT EXISTS net_url TEXT;
+    `);
+    await client.query(`
+      ALTER TABLE pdb_snapshot_runs
+      ADD COLUMN IF NOT EXISTS org_url TEXT;
+    `);
+    await client.query(`
+      ALTER TABLE pdb_snapshot_runs
+      ADD COLUMN IF NOT EXISTS manifest_url TEXT;
     `);
 
     await client.query(`
@@ -59,8 +75,19 @@ const upsertRun = async ({ snapshotDate, status, startedAt, completedAt, netCoun
   try {
     await client.query(
       `
-      INSERT INTO pdb_snapshot_runs (snapshot_date, started_at, completed_at, status, net_count, org_count, blob_prefix)
-      VALUES ($1, $2, $3, $4, $5, $6, $7)
+      INSERT INTO pdb_snapshot_runs (
+        snapshot_date,
+        started_at,
+        completed_at,
+        status,
+        net_count,
+        org_count,
+        blob_prefix,
+        net_url,
+        org_url,
+        manifest_url
+      )
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
       ON CONFLICT (snapshot_date)
       DO UPDATE SET
         started_at = EXCLUDED.started_at,
@@ -68,10 +95,113 @@ const upsertRun = async ({ snapshotDate, status, startedAt, completedAt, netCoun
         status = EXCLUDED.status,
         net_count = EXCLUDED.net_count,
         org_count = EXCLUDED.org_count,
-        blob_prefix = EXCLUDED.blob_prefix;
+        blob_prefix = EXCLUDED.blob_prefix,
+        net_url = COALESCE(EXCLUDED.net_url, pdb_snapshot_runs.net_url),
+        org_url = COALESCE(EXCLUDED.org_url, pdb_snapshot_runs.org_url),
+        manifest_url = COALESCE(EXCLUDED.manifest_url, pdb_snapshot_runs.manifest_url);
       `,
-      [snapshotDate, startedAt, completedAt, status, netCount, orgCount, blobPrefix]
+      [
+        snapshotDate,
+        startedAt,
+        completedAt,
+        status,
+        netCount,
+        orgCount,
+        blobPrefix,
+        null,
+        null,
+        null,
+      ]
     );
+  } finally {
+    client.release();
+  }
+};
+
+const upsertRunWithUrls = async ({
+  snapshotDate,
+  status,
+  startedAt,
+  completedAt,
+  netCount,
+  orgCount,
+  blobPrefix,
+  netUrl,
+  orgUrl,
+  manifestUrl,
+}) => {
+  const client = await pool.connect();
+  try {
+    await client.query(
+      `
+      INSERT INTO pdb_snapshot_runs (
+        snapshot_date,
+        started_at,
+        completed_at,
+        status,
+        net_count,
+        org_count,
+        blob_prefix,
+        net_url,
+        org_url,
+        manifest_url
+      )
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+      ON CONFLICT (snapshot_date)
+      DO UPDATE SET
+        started_at = EXCLUDED.started_at,
+        completed_at = EXCLUDED.completed_at,
+        status = EXCLUDED.status,
+        net_count = EXCLUDED.net_count,
+        org_count = EXCLUDED.org_count,
+        blob_prefix = EXCLUDED.blob_prefix,
+        net_url = COALESCE(EXCLUDED.net_url, pdb_snapshot_runs.net_url),
+        org_url = COALESCE(EXCLUDED.org_url, pdb_snapshot_runs.org_url),
+        manifest_url = COALESCE(EXCLUDED.manifest_url, pdb_snapshot_runs.manifest_url);
+      `,
+      [
+        snapshotDate,
+        startedAt,
+        completedAt,
+        status,
+        netCount,
+        orgCount,
+        blobPrefix,
+        netUrl || null,
+        orgUrl || null,
+        manifestUrl || null,
+      ]
+    );
+  } finally {
+    client.release();
+  }
+};
+
+const listRecentCompleteRuns = async (limit = 12) => {
+  const client = await pool.connect();
+  try {
+    const safeLimit = Number.isFinite(limit) ? Math.max(1, Math.min(limit, 100)) : 12;
+    const result = await client.query(
+      `
+      SELECT
+        snapshot_date,
+        started_at,
+        completed_at,
+        status,
+        net_count,
+        org_count,
+        blob_prefix,
+        net_url,
+        org_url,
+        manifest_url
+      FROM pdb_snapshot_runs
+      WHERE status = 'complete'
+      ORDER BY snapshot_date DESC
+      LIMIT $1
+      `,
+      [safeLimit]
+    );
+    return result.rows;
   } finally {
     client.release();
   }
@@ -132,4 +262,6 @@ module.exports = {
   clearAggregates,
   insertTypeCounts,
   insertCountryCounts,
+  listRecentCompleteRuns,
+  upsertRunWithUrls,
 };

@@ -69,6 +69,18 @@ interface CapacityRow {
   totalGbps: number;
 }
 
+interface SnapshotRun {
+  snapshotDate: string;
+  status: string;
+  startedAt: string | null;
+  completedAt: string | null;
+  netCount: number | null;
+  orgCount: number | null;
+  netUrl: string | null;
+  orgUrl: string | null;
+  manifestUrl: string | null;
+}
+
 const DEFAULT_NAME_COL_WIDTH = 220;
 const DATA_COL_MIN_WIDTH = 90;
 const BASE_TABLE_MIN_WIDTH = 600;
@@ -122,6 +134,9 @@ const PeeringDBDashboard: React.FC = () => {
 
   // Facility org lookup.
   const [orgLookup, setOrgLookup] = useState<Record<number, any>>({});
+  const [snapshotRuns, setSnapshotRuns] = useState<SnapshotRun[]>([]);
+  const [snapshotLoading, setSnapshotLoading] = useState(false);
+  const [snapshotError, setSnapshotError] = useState<string | null>(null);
 
   const metroLabel =
     selectedMetros.length === 0
@@ -274,6 +289,29 @@ const PeeringDBDashboard: React.FC = () => {
   useEffect(() => {
     setSortState({ key: "asn", direction: "asc" });
   }, [lastLoadedMetros]);
+
+  // Load recent snapshot download links.
+  useEffect(() => {
+    const loadSnapshots = async () => {
+      setSnapshotLoading(true);
+      setSnapshotError(null);
+      try {
+        const resp = await fetch("/api/snapshots/latest?limit=6");
+        const json = await resp.json().catch(() => null);
+        if (!resp.ok) {
+          throw new Error(json?.error || `Snapshot API error: ${resp.status}`);
+        }
+        const runs = Array.isArray(json?.runs) ? json.runs : [];
+        setSnapshotRuns(runs);
+      } catch (e: any) {
+        setSnapshotError(e?.message || "Failed to load snapshot downloads.");
+      } finally {
+        setSnapshotLoading(false);
+      }
+    };
+
+    loadSnapshots();
+  }, []);
 
   // ---- Load ALL networks for selectedMetros (using cache where possible) ----
   const handleLoadAllNetworks = async () => {
@@ -1008,6 +1046,74 @@ const PeeringDBDashboard: React.FC = () => {
             </div>
             <div>IXes in loaded metros: {ixData.length}</div>
             <div>Facilities in loaded metros: {facData.length}</div>
+          </div>
+
+          <div
+            style={{
+              marginBottom: 12,
+              padding: 10,
+              borderRadius: 8,
+              background: theme.cardBg,
+              border: `1px solid ${theme.cardBorder}`,
+            }}
+          >
+            <div
+              style={{
+                fontSize: 12,
+                color: theme.textMuted,
+                marginBottom: 6,
+                fontWeight: 600,
+              }}
+            >
+              Snapshot downloads
+            </div>
+            {snapshotLoading && <div style={{ color: theme.textMuted }}>Loading snapshot links…</div>}
+            {snapshotError && (
+              <div style={{ color: "#fca5a5", marginBottom: 6, lineHeight: 1.4 }}>
+                {snapshotError}
+              </div>
+            )}
+            {!snapshotLoading && !snapshotError && snapshotRuns.length === 0 && (
+              <div style={{ color: theme.textMuted }}>No completed snapshots found.</div>
+            )}
+            {snapshotRuns.slice(0, 3).map((run) => (
+              <div key={run.snapshotDate} style={{ marginBottom: 8 }}>
+                <div style={{ marginBottom: 2 }}>
+                  <strong>{run.snapshotDate}</strong>
+                  {run.netCount != null && run.orgCount != null && (
+                    <span style={{ color: theme.textMuted }}>
+                      {" "}
+                      ({run.netCount} nets / {run.orgCount} orgs)
+                    </span>
+                  )}
+                </div>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                  {run.netUrl && (
+                    <a href={run.netUrl} target="_blank" rel="noreferrer" style={{ color: "#86efac" }}>
+                      net.jsonl.gz
+                    </a>
+                  )}
+                  {run.orgUrl && (
+                    <a href={run.orgUrl} target="_blank" rel="noreferrer" style={{ color: "#86efac" }}>
+                      org.jsonl.gz
+                    </a>
+                  )}
+                  {run.manifestUrl && (
+                    <a
+                      href={run.manifestUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      style={{ color: "#86efac" }}
+                    >
+                      manifest.json
+                    </a>
+                  )}
+                  {!run.netUrl && !run.orgUrl && !run.manifestUrl && (
+                    <span style={{ color: theme.textMuted }}>No downloadable links stored for this run.</span>
+                  )}
+                </div>
+              </div>
+            ))}
           </div>
 
           {/* Sidebar width control */}
