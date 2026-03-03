@@ -23,6 +23,7 @@ Configure these in GitHub repository settings:
 Raw files written to Blob prefix `${SNAPSHOT_BLOB_PREFIX}/${snapshot_date}`:
 - `net.jsonl.gz`
 - `org.jsonl.gz`
+- `networks.csv`
 - `manifest.json`
 
 Aggregates written to Postgres:
@@ -59,7 +60,7 @@ From GitHub Actions UI:
 
 Portal download API/UI:
 - `GET /api/snapshots/latest` returns recent completed snapshot metadata with direct Blob URLs.
-- Dashboard sidebar shows latest downloadable files (`net.jsonl.gz`, `org.jsonl.gz`, `manifest.json`).
+- Dashboard sidebar shows latest downloadable files (`net.jsonl.gz`, `org.jsonl.gz`, `networks.csv`, `manifest.json`).
 
 ## Sample export for field validation
 ```bash

@@ -55,6 +55,20 @@ const uploadFile = async (blobPath, filePath, contentType, blobAccess) => {
   return result.url;
 };
 
+const escapeCsvCell = (value) => {
+  if (value === undefined || value === null) return "";
+  const text = String(value);
+  const escaped = text.replace(/"/g, '""');
+  if (/[",\n]/.test(escaped) || /^\s|\s$/.test(escaped)) {
+    return `"${escaped}"`;
+  }
+  return escaped;
+};
+
+const writeCsvRow = (stream, cells) => {
+  stream.write(`${cells.map((c) => escapeCsvCell(c)).join(",")}\n`);
+};
+
 const validateEnv = () => {
   if (!process.env.PEERINGDB_API_KEY) {
     throw new Error("Missing PEERINGDB_API_KEY");
@@ -114,12 +128,14 @@ const runGlobalSnapshot = async ({ force = false, now = new Date(), config = {} 
     const tmpDir = "/tmp";
     const netPath = path.join(tmpDir, `pdb-net-${snapshotDate}.jsonl.gz`);
     const orgPath = path.join(tmpDir, `pdb-org-${snapshotDate}.jsonl.gz`);
+    const networksCsvPath = path.join(tmpDir, `pdb-networks-${snapshotDate}.csv`);
 
     const { gzip: netGzip, done: netDone } = await createGzipWriter(netPath);
     const { gzip: orgGzip, done: orgDone } = await createGzipWriter(orgPath);
 
     const typeCounts = new Map();
     const orgIdCounts = new Map();
+    const netRowsForCsv = [];
     let netCount = 0;
 
     await fetchAllPages({
@@ -138,6 +154,15 @@ const runGlobalSnapshot = async ({ force = false, now = new Date(), config = {} 
           if (row.org_id) {
             orgIdCounts.set(row.org_id, (orgIdCounts.get(row.org_id) || 0) + 1);
           }
+          netRowsForCsv.push({
+            networkId: row.id,
+            asn: row.asn || "",
+            networkName: row.name || "",
+            networkType: row.info_type || "unknown",
+            status: row.status || "",
+            website: row.website || "",
+            orgId: row.org_id || "",
+          });
         });
       },
     });
@@ -146,6 +171,7 @@ const runGlobalSnapshot = async ({ force = false, now = new Date(), config = {} 
     await netDone;
 
     const countryCounts = new Map();
+    const orgLookup = new Map();
     let orgCount = 0;
 
     await fetchAllPages({
@@ -164,6 +190,11 @@ const runGlobalSnapshot = async ({ force = false, now = new Date(), config = {} 
             const country = row.country || "unknown";
             countryCounts.set(country, (countryCounts.get(country) || 0) + count);
           }
+          orgLookup.set(row.id, {
+            name: row.name || "",
+            country: row.country || "",
+            city: row.city || "",
+          });
         });
       },
     });
@@ -184,6 +215,47 @@ const runGlobalSnapshot = async ({ force = false, now = new Date(), config = {} 
       "application/gzip",
       snapshotConfig.blobAccess
     );
+    const csvStream = fs.createWriteStream(networksCsvPath, { encoding: "utf8" });
+    writeCsvRow(csvStream, [
+      "snapshot_date",
+      "asn",
+      "network_id",
+      "network_name",
+      "network_type",
+      "network_status",
+      "network_website",
+      "org_id",
+      "org_name",
+      "org_country",
+      "org_city",
+    ]);
+    netRowsForCsv.forEach((row) => {
+      const org = orgLookup.get(row.orgId) || {};
+      writeCsvRow(csvStream, [
+        snapshotDate,
+        row.asn,
+        row.networkId,
+        row.networkName,
+        row.networkType,
+        row.status,
+        row.website,
+        row.orgId,
+        org.name || "",
+        org.country || "",
+        org.city || "",
+      ]);
+    });
+    await new Promise((resolve, reject) => {
+      csvStream.on("finish", resolve);
+      csvStream.on("error", reject);
+      csvStream.end();
+    });
+    const networksCsvUrl = await uploadFile(
+      `${blobPrefix}/networks.csv`,
+      networksCsvPath,
+      "text/csv; charset=utf-8",
+      snapshotConfig.blobAccess
+    );
 
     const manifest = {
       snapshot_date: snapshotDate,
@@ -194,6 +266,7 @@ const runGlobalSnapshot = async ({ force = false, now = new Date(), config = {} 
       files: {
         net: netUrl,
         org: orgUrl,
+        networks_csv: networksCsvUrl,
       },
     };
 
@@ -217,6 +290,7 @@ const runGlobalSnapshot = async ({ force = false, now = new Date(), config = {} 
       netUrl,
       orgUrl,
       manifestUrl: manifestResult.url,
+      networksCsvUrl,
     });
 
     return {

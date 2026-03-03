@@ -18,7 +18,8 @@ const ensureSchema = async () => {
         blob_prefix TEXT,
         net_url TEXT,
         org_url TEXT,
-        manifest_url TEXT
+        manifest_url TEXT,
+        networks_csv_url TEXT
       );
     `);
 
@@ -33,6 +34,10 @@ const ensureSchema = async () => {
     await client.query(`
       ALTER TABLE pdb_snapshot_runs
       ADD COLUMN IF NOT EXISTS manifest_url TEXT;
+    `);
+    await client.query(`
+      ALTER TABLE pdb_snapshot_runs
+      ADD COLUMN IF NOT EXISTS networks_csv_url TEXT;
     `);
 
     await client.query(`
@@ -85,9 +90,10 @@ const upsertRun = async ({ snapshotDate, status, startedAt, completedAt, netCoun
         blob_prefix,
         net_url,
         org_url,
-        manifest_url
+        manifest_url,
+        networks_csv_url
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
       ON CONFLICT (snapshot_date)
       DO UPDATE SET
         started_at = EXCLUDED.started_at,
@@ -98,7 +104,8 @@ const upsertRun = async ({ snapshotDate, status, startedAt, completedAt, netCoun
         blob_prefix = EXCLUDED.blob_prefix,
         net_url = COALESCE(EXCLUDED.net_url, pdb_snapshot_runs.net_url),
         org_url = COALESCE(EXCLUDED.org_url, pdb_snapshot_runs.org_url),
-        manifest_url = COALESCE(EXCLUDED.manifest_url, pdb_snapshot_runs.manifest_url);
+        manifest_url = COALESCE(EXCLUDED.manifest_url, pdb_snapshot_runs.manifest_url),
+        networks_csv_url = COALESCE(EXCLUDED.networks_csv_url, pdb_snapshot_runs.networks_csv_url);
       `,
       [
         snapshotDate,
@@ -108,6 +115,7 @@ const upsertRun = async ({ snapshotDate, status, startedAt, completedAt, netCoun
         netCount,
         orgCount,
         blobPrefix,
+        null,
         null,
         null,
         null,
@@ -129,6 +137,7 @@ const upsertRunWithUrls = async ({
   netUrl,
   orgUrl,
   manifestUrl,
+  networksCsvUrl,
 }) => {
   const client = await pool.connect();
   try {
@@ -144,9 +153,10 @@ const upsertRunWithUrls = async ({
         blob_prefix,
         net_url,
         org_url,
-        manifest_url
+        manifest_url,
+        networks_csv_url
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
       ON CONFLICT (snapshot_date)
       DO UPDATE SET
         started_at = EXCLUDED.started_at,
@@ -157,7 +167,8 @@ const upsertRunWithUrls = async ({
         blob_prefix = EXCLUDED.blob_prefix,
         net_url = COALESCE(EXCLUDED.net_url, pdb_snapshot_runs.net_url),
         org_url = COALESCE(EXCLUDED.org_url, pdb_snapshot_runs.org_url),
-        manifest_url = COALESCE(EXCLUDED.manifest_url, pdb_snapshot_runs.manifest_url);
+        manifest_url = COALESCE(EXCLUDED.manifest_url, pdb_snapshot_runs.manifest_url),
+        networks_csv_url = COALESCE(EXCLUDED.networks_csv_url, pdb_snapshot_runs.networks_csv_url);
       `,
       [
         snapshotDate,
@@ -170,6 +181,7 @@ const upsertRunWithUrls = async ({
         netUrl || null,
         orgUrl || null,
         manifestUrl || null,
+        networksCsvUrl || null,
       ]
     );
   } finally {
@@ -193,7 +205,8 @@ const listRecentCompleteRuns = async (limit = 12) => {
         blob_prefix,
         net_url,
         org_url,
-        manifest_url
+        manifest_url,
+        networks_csv_url
       FROM pdb_snapshot_runs
       WHERE status = 'complete'
       ORDER BY snapshot_date DESC

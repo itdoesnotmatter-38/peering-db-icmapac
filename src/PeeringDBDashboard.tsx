@@ -79,6 +79,7 @@ interface SnapshotRun {
   netUrl: string | null;
   orgUrl: string | null;
   manifestUrl: string | null;
+  networksCsvUrl: string | null;
 }
 
 const DEFAULT_NAME_COL_WIDTH = 220;
@@ -1108,7 +1109,17 @@ const PeeringDBDashboard: React.FC = () => {
                       manifest.json
                     </a>
                   )}
-                  {!run.netUrl && !run.orgUrl && !run.manifestUrl && (
+                  {run.networksCsvUrl && (
+                    <a
+                      href={run.networksCsvUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      style={{ color: "#86efac" }}
+                    >
+                      networks.csv
+                    </a>
+                  )}
+                  {!run.netUrl && !run.orgUrl && !run.manifestUrl && !run.networksCsvUrl && (
                     <span style={{ color: theme.textMuted }}>No downloadable links stored for this run.</span>
                   )}
                 </div>

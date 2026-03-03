@@ -31,6 +31,7 @@ module.exports = async (req, res) => {
       netUrl: row.net_url,
       orgUrl: row.org_url,
       manifestUrl: row.manifest_url,
+      networksCsvUrl: row.networks_csv_url,
     }));
 
     res.status(200).json({
