@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { fetchPeeringDb } from "./peeringdbApi";
+import { fetchPeeringDb, type PeeringDbParams } from "./peeringdbApi";
 
 /**
  * Theme – dark but with clearer contrast and borders.
@@ -81,6 +81,43 @@ interface SnapshotRun {
   manifestUrl: string | null;
   networksCsvUrl: string | null;
 }
+
+const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+const parseThrottleWaitMs = (message: string): number | null => {
+  const match = message.match(/Expected available in (\d+)\s*seconds?/i);
+  if (!match) return null;
+  const seconds = Number.parseInt(match[1], 10);
+  if (!Number.isFinite(seconds)) return null;
+  return Math.min((seconds + 1) * 1000, 20000);
+};
+
+const fetchPeeringDbWithRetry = async <T,>(
+  obj: string,
+  params: PeeringDbParams = {},
+  maxAttempts = 6
+) => {
+  let attempt = 0;
+  let lastErr: any = null;
+
+  while (attempt < maxAttempts) {
+    try {
+      return await fetchPeeringDb<T>(obj, params);
+    } catch (err: any) {
+      lastErr = err;
+      const message = err?.message || String(err);
+      const throttled = /throttled/i.test(message);
+      if (!throttled || attempt === maxAttempts - 1) {
+        throw err;
+      }
+      const waitMs = parseThrottleWaitMs(message) ?? Math.min(1000 * 2 ** attempt, 15000);
+      await sleep(waitMs);
+    }
+    attempt += 1;
+  }
+
+  throw lastErr || new Error("PeeringDB request failed.");
+};
 
 const DEFAULT_NAME_COL_WIDTH = 220;
 const DATA_COL_MIN_WIDTH = 90;
@@ -263,7 +300,7 @@ const PeeringDBDashboard: React.FC = () => {
         const chunks = chunk(orgIds, 50);
         const acc: Record<number, any> = {};
         for (const ch of chunks) {
-          const { data } = await fetchPeeringDb<any>("org", {
+          const { data } = await fetchPeeringDbWithRetry<any>("org", {
             id__in: ch.join(","),
           });
           data.forEach((org: any) => {
@@ -350,8 +387,8 @@ const PeeringDBDashboard: React.FC = () => {
         let facResult: { data: any[] };
         try {
           [ixResult, facResult] = await Promise.all([
-            fetchPeeringDb<any>("ix", ixParams),
-            fetchPeeringDb<any>("fac", facParams),
+            fetchPeeringDbWithRetry<any>("ix", ixParams),
+            fetchPeeringDbWithRetry<any>("fac", facParams),
           ]);
         } catch (err: any) {
           throw new Error(
@@ -405,10 +442,10 @@ const PeeringDBDashboard: React.FC = () => {
         const param = ch.join(",");
         let rows: any[] = [];
         try {
-          ({ data: rows } = await fetchPeeringDb<any>("netixlan", {
-            ix_id__in: param,
-            all: 1,
-          }));
+            ({ data: rows } = await fetchPeeringDbWithRetry<any>("netixlan", {
+              ix_id__in: param,
+              all: 1,
+            }));
         } catch (err: any) {
           throw new Error(`netixlan fetch failed for ix_id__in=${param}: ${err?.message || err}`);
         }
@@ -444,7 +481,7 @@ const PeeringDBDashboard: React.FC = () => {
           const param = ch.join(",");
           let rows: any[] = [];
           try {
-            ({ data: rows } = await fetchPeeringDb<any>("netfac", {
+            ({ data: rows } = await fetchPeeringDbWithRetry<any>("netfac", {
               fac_id__in: param,
               all: 1,
             }));
@@ -480,7 +517,7 @@ const PeeringDBDashboard: React.FC = () => {
         const param = idChunk.join(",");
         let nets: any[] = [];
         try {
-          ({ data: nets } = await fetchPeeringDb<any>("net", {
+          ({ data: nets } = await fetchPeeringDbWithRetry<any>("net", {
             id__in: param,
           }));
         } catch (err: any) {
