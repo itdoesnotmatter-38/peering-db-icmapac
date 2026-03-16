@@ -83,19 +83,24 @@ interface SnapshotRun {
 }
 
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+const REQUEST_GAP_MS = 500;
+const ORG_CHUNK_SIZE = 25;
+const IX_CHUNK_SIZE = 10;
+const FAC_CHUNK_SIZE = 10;
+const NET_CHUNK_SIZE = 20;
 
 const parseThrottleWaitMs = (message: string): number | null => {
   const match = message.match(/Expected available in (\d+)\s*seconds?/i);
   if (!match) return null;
   const seconds = Number.parseInt(match[1], 10);
   if (!Number.isFinite(seconds)) return null;
-  return Math.min((seconds + 1) * 1000, 20000);
+  return Math.min((seconds + 1) * 1000, 45000);
 };
 
 const fetchPeeringDbWithRetry = async <T,>(
   obj: string,
   params: PeeringDbParams = {},
-  maxAttempts = 6
+  maxAttempts = 10
 ) => {
   let attempt = 0;
   let lastErr: any = null;
@@ -110,7 +115,7 @@ const fetchPeeringDbWithRetry = async <T,>(
       if (!throttled || attempt === maxAttempts - 1) {
         throw err;
       }
-      const waitMs = parseThrottleWaitMs(message) ?? Math.min(1000 * 2 ** attempt, 15000);
+      const waitMs = parseThrottleWaitMs(message) ?? Math.min(1000 * 2 ** attempt, 30000);
       await sleep(waitMs);
     }
     attempt += 1;
@@ -297,7 +302,7 @@ const PeeringDBDashboard: React.FC = () => {
       }
 
       try {
-        const chunks = chunk(orgIds, 50);
+        const chunks = chunk(orgIds, ORG_CHUNK_SIZE);
         const acc: Record<number, any> = {};
         for (const ch of chunks) {
           const { data } = await fetchPeeringDbWithRetry<any>("org", {
@@ -308,6 +313,7 @@ const PeeringDBDashboard: React.FC = () => {
               acc[org.id] = org;
             }
           });
+          await sleep(REQUEST_GAP_MS);
         }
         setOrgLookup(acc);
       } catch (e: any) {
@@ -383,21 +389,17 @@ const PeeringDBDashboard: React.FC = () => {
             ? { country: cfg.country }
             : { country: cfg.country, city: cfg.city };
 
-        let ixResult: { data: any[] };
-        let facResult: { data: any[] };
         try {
-          [ixResult, facResult] = await Promise.all([
-            fetchPeeringDbWithRetry<any>("ix", ixParams),
-            fetchPeeringDbWithRetry<any>("fac", facParams),
-          ]);
+          const ixResult = await fetchPeeringDbWithRetry<any>("ix", ixParams);
+          await sleep(REQUEST_GAP_MS);
+          const facResult = await fetchPeeringDbWithRetry<any>("fac", facParams);
+          workingIxCache[m] = ixResult.data || [];
+          workingFacCache[m] = facResult.data || [];
         } catch (err: any) {
           throw new Error(
             `Failed to load IX/FAC for ${cfg.city} (${cfg.country}): ${err?.message || err}`
           );
         }
-
-        workingIxCache[m] = ixResult.data || [];
-        workingFacCache[m] = facResult.data || [];
       }
 
       // Build union IX/FAC for the selectedMetros (for this load).
@@ -437,7 +439,7 @@ const PeeringDBDashboard: React.FC = () => {
       const netMap = new Map<number, MetroNetwork>();
 
       // 1) IX presence + capacity via netixlan.
-      const ixChunks = chunk(ixIds, 20);
+      const ixChunks = chunk(ixIds, IX_CHUNK_SIZE);
       for (const ch of ixChunks) {
         const param = ch.join(",");
         let rows: any[] = [];
@@ -472,11 +474,12 @@ const PeeringDBDashboard: React.FC = () => {
           const prev = entry.ixCaps.get(ixId) ?? 0;
           entry.ixCaps.set(ixId, prev + (speed > 0 ? speed : 0)); // only sum positive speeds
         });
+        await sleep(REQUEST_GAP_MS);
       }
 
       // 2) Facility presence via netfac.
       if (facIds.length > 0) {
-        const facChunks = chunk(facIds, 20);
+        const facChunks = chunk(facIds, FAC_CHUNK_SIZE);
         for (const ch of facChunks) {
           const param = ch.join(",");
           let rows: any[] = [];
@@ -506,12 +509,13 @@ const PeeringDBDashboard: React.FC = () => {
               netMap.get(netId)!.facIds.add(facId);
             }
           });
+          await sleep(REQUEST_GAP_MS);
         }
       }
 
       // 3) Enrich network names + ASN from /net?id__in=
       const netIds = Array.from(netMap.keys());
-      const netIdChunks = chunk(netIds, 50);
+      const netIdChunks = chunk(netIds, NET_CHUNK_SIZE);
 
       for (const idChunk of netIdChunks) {
         const param = idChunk.join(",");
@@ -538,6 +542,7 @@ const PeeringDBDashboard: React.FC = () => {
             entry.name = label;
           }
         });
+        await sleep(REQUEST_GAP_MS);
       }
 
       const networks = Array.from(netMap.values())
