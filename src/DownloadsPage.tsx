@@ -34,19 +34,14 @@ const shell = {
 const buildSnapshotCsvUrl = (snapshotDate: string) =>
   `/api/snapshots/csv?snapshotDate=${encodeURIComponent(snapshotDate)}`;
 
-const buildSnapshotCountryExportUrl = (
-  snapshotDate: string,
-  country: string,
-  view: "ix" | "facility"
-) =>
-  `/api/snapshots/country-csv?snapshotDate=${encodeURIComponent(snapshotDate)}&country=${encodeURIComponent(country)}&view=${view}`;
+const buildCountryExportUrl = (country: string, view: "ix" | "facility") =>
+  `/api/exports/country-csv?country=${encodeURIComponent(country)}&view=${view}`;
 
 export default function DownloadsPage() {
   const [snapshotRuns, setSnapshotRuns] = useState<SnapshotRun[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [country, setCountry] = useState("SG");
-  const [selectedSnapshotDate, setSelectedSnapshotDate] = useState("");
 
   useEffect(() => {
     const loadSnapshots = async () => {
@@ -60,7 +55,6 @@ export default function DownloadsPage() {
         }
         const runs = Array.isArray(json?.runs) ? json.runs : [];
         setSnapshotRuns(runs);
-        setSelectedSnapshotDate((prev) => prev || runs[0]?.snapshotDate || "");
       } catch (err: any) {
         setError(err?.message || "Failed to load snapshot downloads.");
       } finally {
@@ -134,34 +128,11 @@ export default function DownloadsPage() {
               padding: 18,
             }}
           >
-            <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 8 }}>Snapshot country CSV exports</div>
+            <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 8 }}>Live country CSV exports</div>
             <div style={{ color: shell.muted, lineHeight: 1.5, marginBottom: 16 }}>
-              Generate CSVs from a stored snapshot for a selected country. Use `IX view` for exchange
-              presence and `facility view` for facility presence from that snapshot.
+              Generate current CSV downloads by country. Use `IX view` for exchange presence and
+              `facility view` for facility presence.
             </div>
-
-            <label style={{ display: "block", fontSize: 13, color: shell.muted, marginBottom: 8 }}>
-              Snapshot date
-            </label>
-            <select
-              value={selectedSnapshotDate}
-              onChange={(e) => setSelectedSnapshotDate(e.target.value)}
-              style={{
-                width: "100%",
-                background: shell.bg,
-                color: shell.text,
-                border: `1px solid ${shell.border}`,
-                borderRadius: 12,
-                padding: "12px 14px",
-                marginBottom: 16,
-              }}
-            >
-              {snapshotRuns.map((run) => (
-                <option key={run.snapshotDate} value={run.snapshotDate}>
-                  {run.snapshotDate}
-                </option>
-              ))}
-            </select>
 
             <label style={{ display: "block", fontSize: 13, color: shell.muted, marginBottom: 8 }}>
               Country
@@ -188,7 +159,7 @@ export default function DownloadsPage() {
 
             <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
               <a
-                href={buildSnapshotCountryExportUrl(selectedSnapshotDate, country, "ix")}
+                href={buildCountryExportUrl(country, "ix")}
                 style={{
                   background: shell.accent,
                   color: "#052e16",
@@ -201,7 +172,7 @@ export default function DownloadsPage() {
                 Download IX view CSV
               </a>
               <a
-                href={buildSnapshotCountryExportUrl(selectedSnapshotDate, country, "facility")}
+                href={buildCountryExportUrl(country, "facility")}
                 style={{
                   background: "#d1fae5",
                   color: "#14532d",
@@ -214,9 +185,6 @@ export default function DownloadsPage() {
                 Download facility view CSV
               </a>
             </div>
-            {!selectedSnapshotDate && (
-              <div style={{ color: shell.muted, marginTop: 12 }}>No snapshot is available yet.</div>
-            )}
           </section>
 
           <section

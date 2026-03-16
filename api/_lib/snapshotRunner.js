@@ -69,38 +69,6 @@ const writeCsvRow = (stream, cells) => {
   stream.write(`${cells.map((c) => escapeCsvCell(c)).join(",")}\n`);
 };
 
-const fetchToGzipFile = async ({
-  obj,
-  params = {},
-  apiKey,
-  filePath,
-  limit,
-  maxPages,
-  pageDelayMs,
-}) => {
-  const { gzip, done } = await createGzipWriter(filePath);
-  let rowCount = 0;
-
-  await fetchAllPages({
-    obj,
-    params,
-    apiKey,
-    limit,
-    maxPages,
-    pageDelayMs,
-    onPage: async (rows) => {
-      rows.forEach((row) => {
-        gzip.write(`${JSON.stringify(row)}\n`);
-        rowCount += 1;
-      });
-    },
-  });
-
-  gzip.end();
-  await done;
-  return rowCount;
-};
-
 const validateEnv = () => {
   if (!process.env.PEERINGDB_API_KEY) {
     throw new Error("Missing PEERINGDB_API_KEY");
@@ -160,10 +128,6 @@ const runGlobalSnapshot = async ({ force = false, now = new Date(), config = {} 
     const tmpDir = "/tmp";
     const netPath = path.join(tmpDir, `pdb-net-${snapshotDate}.jsonl.gz`);
     const orgPath = path.join(tmpDir, `pdb-org-${snapshotDate}.jsonl.gz`);
-    const ixPath = path.join(tmpDir, `pdb-ix-${snapshotDate}.jsonl.gz`);
-    const facPath = path.join(tmpDir, `pdb-fac-${snapshotDate}.jsonl.gz`);
-    const netixlanPath = path.join(tmpDir, `pdb-netixlan-${snapshotDate}.jsonl.gz`);
-    const netfacPath = path.join(tmpDir, `pdb-netfac-${snapshotDate}.jsonl.gz`);
     const networksCsvPath = path.join(tmpDir, `pdb-networks-${snapshotDate}.csv`);
 
     const { gzip: netGzip, done: netDone } = await createGzipWriter(netPath);
@@ -251,62 +215,6 @@ const runGlobalSnapshot = async ({ force = false, now = new Date(), config = {} 
       "application/gzip",
       snapshotConfig.blobAccess
     );
-    const ixCount = await fetchToGzipFile({
-      obj: "ix",
-      apiKey: process.env.PEERINGDB_API_KEY,
-      filePath: ixPath,
-      limit: snapshotConfig.pageLimit,
-      maxPages: snapshotConfig.maxPages,
-      pageDelayMs: snapshotConfig.pageDelayMs,
-    });
-    const facCount = await fetchToGzipFile({
-      obj: "fac",
-      apiKey: process.env.PEERINGDB_API_KEY,
-      filePath: facPath,
-      limit: snapshotConfig.pageLimit,
-      maxPages: snapshotConfig.maxPages,
-      pageDelayMs: snapshotConfig.pageDelayMs,
-    });
-    const netixlanCount = await fetchToGzipFile({
-      obj: "netixlan",
-      apiKey: process.env.PEERINGDB_API_KEY,
-      filePath: netixlanPath,
-      limit: snapshotConfig.pageLimit,
-      maxPages: snapshotConfig.maxPages,
-      pageDelayMs: snapshotConfig.pageDelayMs,
-    });
-    const netfacCount = await fetchToGzipFile({
-      obj: "netfac",
-      apiKey: process.env.PEERINGDB_API_KEY,
-      filePath: netfacPath,
-      limit: snapshotConfig.pageLimit,
-      maxPages: snapshotConfig.maxPages,
-      pageDelayMs: snapshotConfig.pageDelayMs,
-    });
-    const ixUrl = await uploadFile(
-      `${blobPrefix}/ix.jsonl.gz`,
-      ixPath,
-      "application/gzip",
-      snapshotConfig.blobAccess
-    );
-    const facUrl = await uploadFile(
-      `${blobPrefix}/fac.jsonl.gz`,
-      facPath,
-      "application/gzip",
-      snapshotConfig.blobAccess
-    );
-    const netixlanUrl = await uploadFile(
-      `${blobPrefix}/netixlan.jsonl.gz`,
-      netixlanPath,
-      "application/gzip",
-      snapshotConfig.blobAccess
-    );
-    const netfacUrl = await uploadFile(
-      `${blobPrefix}/netfac.jsonl.gz`,
-      netfacPath,
-      "application/gzip",
-      snapshotConfig.blobAccess
-    );
     const csvStream = fs.createWriteStream(networksCsvPath, { encoding: "utf8" });
     writeCsvRow(csvStream, [
       "snapshot_date",
@@ -355,17 +263,9 @@ const runGlobalSnapshot = async ({ force = false, now = new Date(), config = {} 
       timezone: snapshotConfig.timezone,
       net_count: netCount,
       org_count: orgCount,
-      ix_count: ixCount,
-      fac_count: facCount,
-      netixlan_count: netixlanCount,
-      netfac_count: netfacCount,
       files: {
         net: netUrl,
         org: orgUrl,
-        ix: ixUrl,
-        fac: facUrl,
-        netixlan: netixlanUrl,
-        netfac: netfacUrl,
         networks_csv: networksCsvUrl,
       },
     };
