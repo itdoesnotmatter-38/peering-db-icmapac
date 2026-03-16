@@ -15,7 +15,7 @@
 const PEERINGDB_BASE_URL = "https://www.peeringdb.com/api";
 const DEFAULT_LIMIT = 250;
 const MAX_PAGES = 2000;
-const MAX_RETRIES = 6;
+const MAX_RETRIES = 12;
 const BASE_DELAY_MS = 1000;
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -64,17 +64,42 @@ const bodyLooksRetryable = (text = "") => {
   );
 };
 
-const getRetryDelayMs = (response, attempt) => {
+const parseRetryDelayFromBody = (text = "", data = null) => {
+  const sources = [
+    text,
+    typeof data?.message === "string" ? data.message : "",
+    typeof data?.error === "string" ? data.error : "",
+    typeof data?.detail === "string" ? data.detail : "",
+  ].filter(Boolean);
+
+  for (const source of sources) {
+    const match = source.match(/Expected available in (\d+)\s*seconds?/i);
+    if (match) {
+      const seconds = Number.parseInt(match[1], 10);
+      if (Number.isFinite(seconds)) {
+        return Math.min((seconds + 1) * 1000, 45000);
+      }
+    }
+  }
+
+  return null;
+};
+
+const getRetryDelayMs = (response, attempt, text = "", data = null) => {
   const retryAfter = response?.headers?.get?.("retry-after");
   if (retryAfter) {
     const seconds = Number.parseInt(retryAfter, 10);
     if (Number.isFinite(seconds)) {
-      return Math.min(seconds * 1000, 15000);
+      return Math.min(seconds * 1000, 45000);
     }
+  }
+  const bodyDelay = parseRetryDelayFromBody(text, data);
+  if (bodyDelay !== null) {
+    return bodyDelay;
   }
   const base = BASE_DELAY_MS * Math.pow(2, attempt);
   const jitter = Math.floor(Math.random() * 200);
-  return Math.min(base + jitter, 8000);
+  return Math.min(base + jitter, 30000);
 };
 
 const parseJsonFromText = (text) => {
@@ -101,7 +126,7 @@ const fetchWithRetry = async (url, options = {}) => {
         return { resp, data, text };
       }
 
-      await sleep(getRetryDelayMs(resp, attempt));
+      await sleep(getRetryDelayMs(resp, attempt, text, data));
     } catch (err) {
       lastError = err;
       if (attempt === MAX_RETRIES) {
