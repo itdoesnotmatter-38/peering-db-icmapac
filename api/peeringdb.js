@@ -15,8 +15,8 @@
 const PEERINGDB_BASE_URL = "https://www.peeringdb.com/api";
 const DEFAULT_LIMIT = 250;
 const MAX_PAGES = 2000;
-const MAX_RETRIES = 3;
-const BASE_DELAY_MS = 400;
+const MAX_RETRIES = 6;
+const BASE_DELAY_MS = 1000;
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -52,6 +52,18 @@ const buildUpstreamUrl = (obj, params) => {
 
 const shouldRetry = (status) => status === 429 || status >= 500;
 
+const bodyLooksRetryable = (text = "") => {
+  const lower = text.toLowerCase();
+  return (
+    lower.includes("request was throttled") ||
+    lower.includes("expected available in") ||
+    lower.includes("too many requests") ||
+    lower.includes("rate limit") ||
+    lower.includes("temporarily unavailable") ||
+    lower.includes("cloudflare")
+  );
+};
+
 const getRetryDelayMs = (response, attempt) => {
   const retryAfter = response?.headers?.get?.("retry-after");
   if (retryAfter) {
@@ -65,6 +77,15 @@ const getRetryDelayMs = (response, attempt) => {
   return Math.min(base + jitter, 8000);
 };
 
+const parseJsonFromText = (text) => {
+  if (!text) return null;
+  try {
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
+};
+
 const fetchWithRetry = async (url, options = {}) => {
   let attempt = 0;
   let lastError = null;
@@ -72,9 +93,14 @@ const fetchWithRetry = async (url, options = {}) => {
   while (attempt <= MAX_RETRIES) {
     try {
       const resp = await fetch(url, options);
-      if (resp.ok || !shouldRetry(resp.status) || attempt === MAX_RETRIES) {
-        return resp;
+      const text = await resp.text();
+      const data = parseJsonFromText(text);
+      const retryable = shouldRetry(resp.status) || (!data && bodyLooksRetryable(text));
+
+      if (!retryable || attempt === MAX_RETRIES) {
+        return { resp, data, text };
       }
+
       await sleep(getRetryDelayMs(resp, attempt));
     } catch (err) {
       lastError = err;
@@ -87,14 +113,6 @@ const fetchWithRetry = async (url, options = {}) => {
   }
 
   throw lastError || new Error("Failed to reach PeeringDB after retries.");
-};
-
-const safeJson = async (resp) => {
-  try {
-    return await resp.json();
-  } catch {
-    return null;
-  }
 };
 
 module.exports = async (request, response) => {
@@ -123,11 +141,14 @@ module.exports = async (request, response) => {
   try {
     if (!wantsAll) {
       const upstreamUrl = buildUpstreamUrl(obj, params);
-      const upstreamResp = await fetchWithRetry(upstreamUrl, { headers });
-      const data = await safeJson(upstreamResp);
+      const { resp: upstreamResp, data, text } = await fetchWithRetry(upstreamUrl, { headers });
 
       if (!data) {
-        response.status(502).json({ error: "Invalid response from PeeringDB" });
+        response.status(502).json({
+          error: bodyLooksRetryable(text)
+            ? text || "PeeringDB request was throttled."
+            : "Invalid response from PeeringDB",
+        });
         return;
       }
 
@@ -152,11 +173,14 @@ module.exports = async (request, response) => {
     while (true) {
       const pageParams = { ...params, limit, skip };
       const upstreamUrl = buildUpstreamUrl(obj, pageParams);
-      const upstreamResp = await fetchWithRetry(upstreamUrl, { headers });
-      const data = await safeJson(upstreamResp);
+      const { resp: upstreamResp, data, text } = await fetchWithRetry(upstreamUrl, { headers });
 
       if (!data || !Array.isArray(data.data)) {
-        response.status(502).json({ error: "Invalid response from PeeringDB" });
+        response.status(502).json({
+          error: bodyLooksRetryable(text)
+            ? text || "PeeringDB request was throttled."
+            : "Invalid response from PeeringDB",
+        });
         return;
       }
 
