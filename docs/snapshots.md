@@ -61,6 +61,7 @@ From GitHub Actions UI:
 Portal download API/UI:
 - `GET /api/snapshots/latest` returns recent completed snapshot metadata with direct Blob URLs.
 - Dashboard sidebar shows latest downloadable files (`net.jsonl.gz`, `org.jsonl.gz`, `networks.csv`, `manifest.json`).
+- `GET /api/snapshots/csv?snapshotDate=YYYY-MM-DD` generates a CSV on demand from stored snapshot sources, so older runs remain spreadsheet-downloadable even if they predate `networks.csv` uploads.
 
 ## Sample export for field validation
 ```bash

@@ -82,6 +82,9 @@ interface SnapshotRun {
   networksCsvUrl: string | null;
 }
 
+const buildSnapshotCsvUrl = (snapshotDate: string) =>
+  `/api/snapshots/csv?snapshotDate=${encodeURIComponent(snapshotDate)}`;
+
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 const REQUEST_GAP_MS = 500;
 const ORG_CHUNK_SIZE = 25;
@@ -1151,17 +1154,15 @@ const PeeringDBDashboard: React.FC = () => {
                       manifest.json
                     </a>
                   )}
-                  {run.networksCsvUrl && (
-                    <a
-                      href={run.networksCsvUrl}
-                      target="_blank"
-                      rel="noreferrer"
-                      style={{ color: "#86efac" }}
-                    >
-                      networks.csv
-                    </a>
-                  )}
-                  {!run.netUrl && !run.orgUrl && !run.manifestUrl && !run.networksCsvUrl && (
+                  <a
+                    href={run.networksCsvUrl || buildSnapshotCsvUrl(run.snapshotDate)}
+                    target="_blank"
+                    rel="noreferrer"
+                    style={{ color: "#86efac" }}
+                  >
+                    networks.csv
+                  </a>
+                  {!run.netUrl && !run.orgUrl && !run.manifestUrl && (
                     <span style={{ color: theme.textMuted }}>No downloadable links stored for this run.</span>
                   )}
                 </div>

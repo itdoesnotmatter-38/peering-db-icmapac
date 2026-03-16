@@ -75,6 +75,34 @@ const getRun = async (snapshotDate) => {
   }
 };
 
+const getRunDetails = async (snapshotDate) => {
+  const client = await pool.connect();
+  try {
+    const result = await client.query(
+      `
+      SELECT
+        snapshot_date,
+        status,
+        started_at,
+        completed_at,
+        net_count,
+        org_count,
+        blob_prefix,
+        net_url,
+        org_url,
+        manifest_url,
+        networks_csv_url
+      FROM pdb_snapshot_runs
+      WHERE snapshot_date = $1
+      `,
+      [snapshotDate]
+    );
+    return result.rows[0] || null;
+  } finally {
+    client.release();
+  }
+};
+
 const upsertRun = async ({ snapshotDate, status, startedAt, completedAt, netCount, orgCount, blobPrefix }) => {
   const client = await pool.connect();
   try {
@@ -277,4 +305,5 @@ module.exports = {
   insertCountryCounts,
   listRecentCompleteRuns,
   upsertRunWithUrls,
+  getRunDetails,
 };
