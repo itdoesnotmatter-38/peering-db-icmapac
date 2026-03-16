@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { Link } from "react-router-dom";
 import { fetchPeeringDb, type PeeringDbParams } from "./peeringdbApi";
 
 /**
@@ -1025,42 +1026,58 @@ const PeeringDBDashboard: React.FC = () => {
             Metro selection (for next load): <strong>{metroLabel}</strong>
           </div>
         </div>
-        <div
-          style={{
-            fontSize: 13,
-            color: theme.textSoft,
-            display: "flex",
-            flexWrap: "wrap",
-            gap: 6,
-            justifyContent: "flex-end",
-            maxWidth: "100%",
-            paddingBottom: 4,
-          }}
-        >
-          {(Object.keys(METROS) as MetroKey[]).map((m) => (
-            <label
-              key={m}
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                gap: 4,
-                padding: "3px 8px",
-                borderRadius: 9999,
-                border: `1px solid ${selectedMetros.includes(m) ? "#22c55e" : theme.pillBorder}`,
-                background: theme.pillBg,
-                cursor: "pointer",
-                whiteSpace: "nowrap",
-              }}
-            >
-              <input
-                type="checkbox"
-                checked={selectedMetros.includes(m)}
-                onChange={() => toggleMetroSelection(m)}
-                style={{ accentColor: "#22c55e" }}
-              />
-              <span>{m}</span>
-            </label>
-          ))}
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 10 }}>
+          <Link
+            to="/downloads"
+            style={{
+              color: theme.textPrimary,
+              textDecoration: "none",
+              border: `1px solid ${theme.cardBorder}`,
+              borderRadius: 9999,
+              padding: "8px 12px",
+              fontSize: 13,
+              background: "#0f172a",
+            }}
+          >
+            Open downloads
+          </Link>
+          <div
+            style={{
+              fontSize: 13,
+              color: theme.textSoft,
+              display: "flex",
+              flexWrap: "wrap",
+              gap: 6,
+              justifyContent: "flex-end",
+              maxWidth: "100%",
+              paddingBottom: 4,
+            }}
+          >
+            {(Object.keys(METROS) as MetroKey[]).map((m) => (
+              <label
+                key={m}
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 4,
+                  padding: "3px 8px",
+                  borderRadius: 9999,
+                  border: `1px solid ${selectedMetros.includes(m) ? "#22c55e" : theme.pillBorder}`,
+                  background: theme.pillBg,
+                  cursor: "pointer",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                <input
+                  type="checkbox"
+                  checked={selectedMetros.includes(m)}
+                  onChange={() => toggleMetroSelection(m)}
+                  style={{ accentColor: "#22c55e" }}
+                />
+                <span>{m}</span>
+              </label>
+            ))}
+          </div>
         </div>
       </header>
 

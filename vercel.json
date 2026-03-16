@@ -1,5 +1,8 @@
 {
   "functions": {
+    "api/exports/country-csv.js": {
+      "maxDuration": 300
+    },
     "api/snapshots/run.js": {
       "maxDuration": 300
     }

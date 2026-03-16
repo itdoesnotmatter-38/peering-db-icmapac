@@ -62,6 +62,8 @@ Portal download API/UI:
 - `GET /api/snapshots/latest` returns recent completed snapshot metadata with direct Blob URLs.
 - Dashboard sidebar shows latest downloadable files (`net.jsonl.gz`, `org.jsonl.gz`, `networks.csv`, `manifest.json`).
 - `GET /api/snapshots/csv?snapshotDate=YYYY-MM-DD` generates a CSV on demand from stored snapshot sources, so older runs remain spreadsheet-downloadable even if they predate `networks.csv` uploads.
+- `/downloads` provides a dedicated UI for snapshot downloads plus live country exports for `IX view` and `facility view` CSVs.
+- `GET /api/exports/country-csv?country=SG&view=ix` generates live country CSV exports. Use `view=facility` for facility presence.
 
 ## Sample export for field validation
 ```bash
