@@ -41,6 +41,7 @@ const METROS = {
   Sydney: { country: "AU", city: "Sydney" },
   Mumbai: { country: "IN", city: "Mumbai" },
   "Hong Kong": { country: "HK", city: "Hong Kong" },
+  Bangkok: { country: "TH", city: "Bangkok" },
   Chennai: { country: "IN", city: "Chennai" },
   Seoul: { country: "KR", city: "Seoul" },
   Tokyo: { country: "JP", city: "Tokyo" },
