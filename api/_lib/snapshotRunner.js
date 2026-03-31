@@ -50,6 +50,7 @@ const uploadFile = async (blobPath, filePath, contentType, blobAccess) => {
   const result = await put(blobPath, stream, {
     access: blobAccess,
     addRandomSuffix: false,
+    allowOverwrite: true,
     contentType,
   });
   return result.url;
@@ -373,6 +374,7 @@ const runGlobalSnapshot = async ({ force = false, now = new Date(), config = {} 
     const manifestResult = await put(`${blobPrefix}/manifest.json`, JSON.stringify(manifest, null, 2), {
       access: snapshotConfig.blobAccess,
       addRandomSuffix: false,
+      allowOverwrite: true,
       contentType: "application/json",
     });
 
