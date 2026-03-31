@@ -63,7 +63,7 @@ Portal download API/UI:
 - Dashboard sidebar shows latest downloadable files (`net.jsonl.gz`, `org.jsonl.gz`, `networks.csv`, `manifest.json`).
 - `GET /api/snapshots/csv?snapshotDate=YYYY-MM-DD` generates a `networks.csv` on demand from stored snapshot sources, so older runs remain spreadsheet-downloadable even if they predate `networks.csv` uploads.
 - `/downloads` provides a dedicated UI for snapshot downloads plus snapshot-based country exports for `IX view` and `facility view` CSVs.
-- `GET /api/snapshots/country-csv?snapshotDate=YYYY-MM-DD&country=SG&view=ix` generates snapshot-based country CSV exports. Use `view=facility` for facility presence.
+- `GET /api/snapshots/country-csv?snapshotDate=YYYY-MM-DD&country=SG&view=ix` generates snapshot-based country CSV exports. `IX view` is a network-level summary with deployed capacity across all IXs in the selected market. Use `view=facility` for a network-level summary of presence across all facilities in the selected market.
 
 ## Snapshot scope for country IX/facility exports
 To support true snapshot-based `IX view` and `facility view` by country, snapshots now also store:

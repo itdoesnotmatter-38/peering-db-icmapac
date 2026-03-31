@@ -48,45 +48,84 @@ const requireFileUrl = (manifest, key) => {
   return value;
 };
 
+const normalizeText = (value) => String(value || "").trim();
+const uniqueSorted = (values) =>
+  Array.from(new Set(values.map((value) => normalizeText(value)).filter(Boolean))).sort((a, b) =>
+    a.localeCompare(b)
+  );
+
 const buildIxViewRows = ({ snapshotDate, country, ixRows, netixlanRows, netRows }) => {
   const ixLookup = new Map(ixRows.map((ix) => [ix.id, ix]));
   const netLookup = new Map(netRows.map((net) => [net.id, net]));
   const ixIds = new Set(ixRows.filter((ix) => ix.country === country).map((ix) => ix.id));
-  const rows = netixlanRows.filter((row) => ixIds.has(row.ix_id));
+  const rowsByNet = new Map();
+
+  netixlanRows
+    .filter((row) => ixIds.has(row.ix_id))
+    .forEach((row) => {
+      const key = row.net_id;
+      if (!key) return;
+      if (!rowsByNet.has(key)) {
+        rowsByNet.set(key, {
+          ixIds: new Set(),
+          ixNames: new Set(),
+          ixCities: new Set(),
+          deployedCapacityMbps: 0,
+        });
+      }
+      const bucket = rowsByNet.get(key);
+      const ix = ixLookup.get(row.ix_id) || {};
+      bucket.ixIds.add(String(row.ix_id));
+      if (ix.name) bucket.ixNames.add(ix.name);
+      if (ix.city) bucket.ixCities.add(ix.city);
+      const speed = Number(row.speed);
+      if (Number.isFinite(speed)) {
+        bucket.deployedCapacityMbps += speed;
+      }
+    });
+
+  const rows = Array.from(rowsByNet.entries())
+    .map(([netId, summary]) => {
+      const net = netLookup.get(netId) || {};
+      const ixIdsList = uniqueSorted(Array.from(summary.ixIds));
+      const ixNamesList = uniqueSorted(Array.from(summary.ixNames));
+      const ixCitiesList = uniqueSorted(Array.from(summary.ixCities));
+      return [
+        snapshotDate,
+        country,
+        netId,
+        net.asn || "",
+        net.name || "",
+        net.info_type || "",
+        ixIdsList.length,
+        ixIdsList.join(" | "),
+        ixNamesList.join(" | "),
+        ixCitiesList.join(" | "),
+        summary.deployedCapacityMbps,
+      ];
+    })
+    .sort((a, b) => {
+      const asnA = Number(a[3]) || 0;
+      const asnB = Number(b[3]) || 0;
+      if (asnA !== asnB) return asnA - asnB;
+      return String(a[4]).localeCompare(String(b[4]));
+    });
 
   return [
     [
       "snapshot_date",
       "country",
-      "ix_id",
-      "ix_name",
-      "ix_city",
       "network_id",
       "asn",
       "network_name",
       "network_type",
-      "speed_mbps",
-      "ipaddr4",
-      "ipaddr6",
+      "ix_count",
+      "ix_ids",
+      "ix_names",
+      "ix_cities",
+      "deployed_capacity_mbps",
     ],
-    ...rows.map((row) => {
-      const ix = ixLookup.get(row.ix_id) || {};
-      const net = netLookup.get(row.net_id) || {};
-      return [
-        snapshotDate,
-        country,
-        row.ix_id || "",
-        ix.name || "",
-        ix.city || "",
-        row.net_id || "",
-        net.asn || row.asn || "",
-        net.name || "",
-        net.info_type || "",
-        row.speed || "",
-        row.ipaddr4 || "",
-        row.ipaddr6 || "",
-      ];
-    }),
+    ...rows,
   ];
 };
 
@@ -94,35 +133,67 @@ const buildFacilityViewRows = ({ snapshotDate, country, facRows, netfacRows, net
   const facLookup = new Map(facRows.map((fac) => [fac.id, fac]));
   const netLookup = new Map(netRows.map((net) => [net.id, net]));
   const facIds = new Set(facRows.filter((fac) => fac.country === country).map((fac) => fac.id));
-  const rows = netfacRows.filter((row) => facIds.has(row.fac_id));
+  const rowsByNet = new Map();
+
+  netfacRows
+    .filter((row) => facIds.has(row.fac_id))
+    .forEach((row) => {
+      const key = row.net_id;
+      if (!key) return;
+      if (!rowsByNet.has(key)) {
+        rowsByNet.set(key, {
+          facilityIds: new Set(),
+          facilityNames: new Set(),
+          facilityCities: new Set(),
+        });
+      }
+      const bucket = rowsByNet.get(key);
+      const fac = facLookup.get(row.fac_id) || {};
+      bucket.facilityIds.add(String(row.fac_id));
+      if (fac.name) bucket.facilityNames.add(fac.name);
+      if (fac.city) bucket.facilityCities.add(fac.city);
+    });
+
+  const rows = Array.from(rowsByNet.entries())
+    .map(([netId, summary]) => {
+      const net = netLookup.get(netId) || {};
+      const facilityIds = uniqueSorted(Array.from(summary.facilityIds));
+      const facilityNames = uniqueSorted(Array.from(summary.facilityNames));
+      const facilityCities = uniqueSorted(Array.from(summary.facilityCities));
+      return [
+        snapshotDate,
+        country,
+        netId,
+        net.asn || "",
+        net.name || "",
+        net.info_type || "",
+        facilityIds.length,
+        facilityIds.join(" | "),
+        facilityNames.join(" | "),
+        facilityCities.join(" | "),
+      ];
+    })
+    .sort((a, b) => {
+      const asnA = Number(a[3]) || 0;
+      const asnB = Number(b[3]) || 0;
+      if (asnA !== asnB) return asnA - asnB;
+      return String(a[4]).localeCompare(String(b[4]));
+    });
 
   return [
     [
       "snapshot_date",
       "country",
-      "facility_id",
-      "facility_name",
-      "facility_city",
       "network_id",
       "asn",
       "network_name",
       "network_type",
+      "facility_count",
+      "facility_ids",
+      "facility_names",
+      "facility_cities",
     ],
-    ...rows.map((row) => {
-      const fac = facLookup.get(row.fac_id) || {};
-      const net = netLookup.get(row.net_id) || {};
-      return [
-        snapshotDate,
-        country,
-        row.fac_id || "",
-        fac.name || "",
-        fac.city || "",
-        row.net_id || "",
-        net.asn || "",
-        net.name || "",
-        net.info_type || "",
-      ];
-    }),
+    ...rows,
   ];
 };
 

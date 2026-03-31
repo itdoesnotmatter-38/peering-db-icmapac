@@ -15,6 +15,7 @@ const COUNTRY_OPTIONS = [
   { code: "SG", label: "Singapore" },
   { code: "ID", label: "Indonesia" },
   { code: "MY", label: "Malaysia" },
+  { code: "TH", label: "Thailand" },
   { code: "AU", label: "Australia" },
   { code: "IN", label: "India" },
   { code: "HK", label: "Hong Kong" },
@@ -136,8 +137,10 @@ export default function DownloadsPage() {
           >
             <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 8 }}>Snapshot country exports</div>
             <div style={{ color: shell.muted, lineHeight: 1.5, marginBottom: 16 }}>
-              Generate country-specific CSVs from a stored snapshot. Use `IX view` for exchange presence
-              and `facility view` for facility presence at that snapshot date.
+              Generate country-specific CSVs from a stored snapshot. `IX view` summarizes each
+              network's deployed capacity across all IXs in the selected market, while `facility view`
+              summarizes each network's presence across all facilities in that market. Bangkok exports
+              use `Thailand (TH)`.
             </div>
 
             <label style={{ display: "block", fontSize: 13, color: shell.muted, marginBottom: 8 }}>
