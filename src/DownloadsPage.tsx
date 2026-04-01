@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
+import { withApiRoot } from "./apiBase";
 
 type SnapshotRun = {
   snapshotDate: string;
@@ -16,6 +17,7 @@ const COUNTRY_OPTIONS = [
   { code: "ID", label: "Indonesia" },
   { code: "MY", label: "Malaysia" },
   { code: "TH", label: "Thailand" },
+  { code: "PH", label: "Philippines" },
   { code: "AU", label: "Australia" },
   { code: "IN", label: "India" },
   { code: "HK", label: "Hong Kong" },
@@ -33,14 +35,16 @@ const shell = {
 };
 
 const buildSnapshotCsvUrl = (snapshotDate: string) =>
-  `/api/snapshots/csv?snapshotDate=${encodeURIComponent(snapshotDate)}`;
+  withApiRoot(`/api/snapshots/csv?snapshotDate=${encodeURIComponent(snapshotDate)}`);
 
 const buildSnapshotCountryExportUrl = (
   snapshotDate: string,
   country: string,
   view: "ix" | "facility"
 ) =>
-  `/api/snapshots/country-csv?snapshotDate=${encodeURIComponent(snapshotDate)}&country=${encodeURIComponent(country)}&view=${view}`;
+  withApiRoot(
+    `/api/snapshots/country-csv?snapshotDate=${encodeURIComponent(snapshotDate)}&country=${encodeURIComponent(country)}&view=${view}`
+  );
 
 export default function DownloadsPage() {
   const [snapshotRuns, setSnapshotRuns] = useState<SnapshotRun[]>([]);
@@ -54,7 +58,7 @@ export default function DownloadsPage() {
       setLoading(true);
       setError(null);
       try {
-        const resp = await fetch("/api/snapshots/latest?limit=12");
+        const resp = await fetch(withApiRoot("/api/snapshots/latest?limit=12"));
         const json = await resp.json().catch(() => null);
         if (!resp.ok) {
           throw new Error(json?.error || `Snapshot API error: ${resp.status}`);
@@ -140,7 +144,7 @@ export default function DownloadsPage() {
               Generate country-specific CSVs from a stored snapshot. `IX view` summarizes each
               network's deployed capacity across all IXs in the selected market, while `facility view`
               summarizes each network's presence across all facilities in that market. Bangkok exports
-              use `Thailand (TH)`.
+              use `Thailand (TH)` and Manila exports use `Philippines (PH)`.
             </div>
 
             <label style={{ display: "block", fontSize: 13, color: shell.muted, marginBottom: 8 }}>

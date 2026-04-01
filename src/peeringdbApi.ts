@@ -1,3 +1,5 @@
+import { withApiRoot } from "./apiBase";
+
 export type PeeringDbParamValue =
   | string
   | number
@@ -18,7 +20,7 @@ export interface PeeringDbResponse<T> {
   };
 }
 
-const API_BASE = "/api/peeringdb";
+const API_BASE = withApiRoot("/api/peeringdb");
 
 export function buildPeeringDbUrl(obj: string, params: PeeringDbParams = {}): string {
   const search = new URLSearchParams();
