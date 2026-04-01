@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import { Link } from "react-router-dom";
 import { fetchPeeringDb, type PeeringDbParams } from "./peeringdbApi";
-import { withApiRoot } from "./apiBase";
 
 /**
  * Theme – dark but with clearer contrast and borders.
@@ -123,19 +122,6 @@ interface CapacityRow {
   totalGbps: number;
 }
 
-interface SnapshotRun {
-  snapshotDate: string;
-  status: string;
-  startedAt: string | null;
-  completedAt: string | null;
-  netCount: number | null;
-  orgCount: number | null;
-  netUrl: string | null;
-  orgUrl: string | null;
-  manifestUrl: string | null;
-  networksCsvUrl: string | null;
-}
-
 interface NetDetailCacheEntry {
   asn: number | null;
   name: string;
@@ -243,9 +229,6 @@ interface LoadProgressState {
   metroStatuses: Partial<Record<MetroKey, MetroLoadStatus>>;
 }
 
-const buildSnapshotCsvUrl = (snapshotDate: string) =>
-  withApiRoot(`/api/snapshots/csv?snapshotDate=${encodeURIComponent(snapshotDate)}`);
-
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 const formatWaitSeconds = (ms: number) => `${Math.max(1, Math.ceil(ms / 1000))}s`;
 const integerFormatter = new Intl.NumberFormat("en-US");
@@ -260,6 +243,20 @@ const ORG_CHUNK_SIZE = 50;
 const IX_CHUNK_SIZE = 10;
 const FAC_CHUNK_SIZE = 10;
 const NET_CHUNK_SIZE = 40;
+const NETFAC_FETCH_ATTEMPTS = 24;
+const NETIXLAN_FETCH_ATTEMPTS = 16;
+const LARGE_METRO_HINTS = new Set<MetroKey>([
+  "London",
+  "Frankfurt",
+  "Ashburn",
+  "New York",
+  "Chicago",
+  "Dallas",
+  "Los Angeles",
+  "Paris",
+  "Tokyo",
+  "Singapore",
+]);
 
 const formatCount = (value: number) => integerFormatter.format(value);
 
@@ -277,6 +274,48 @@ const parseThrottleWaitMs = (message: string): number | null => {
   if (!Number.isFinite(seconds)) return null;
   return Math.min((seconds + 1) * 1000, 45000);
 };
+
+const parsePeeringDbErrorPayload = (message: string): string | null => {
+  const trimmed = message.trim();
+  if (!trimmed.startsWith("{")) return null;
+
+  try {
+    const parsed = JSON.parse(trimmed);
+    const payloadMessage =
+      typeof parsed?.message === "string"
+        ? parsed.message
+        : typeof parsed?.error === "string"
+          ? parsed.error
+          : typeof parsed?.meta?.error === "string"
+            ? parsed.meta.error
+            : null;
+    return payloadMessage;
+  } catch {
+    return null;
+  }
+};
+
+const getFriendlyPeeringDbMessage = (rawMessage: string): string => {
+  const parsedPayload = parsePeeringDbErrorPayload(rawMessage);
+  const normalized = (parsedPayload ?? rawMessage).replace(/\s+/g, " ").trim();
+  const waitMs = parseThrottleWaitMs(normalized);
+
+  if (/throttled|too many requests/i.test(normalized)) {
+    return waitMs
+      ? `PeeringDB rate-limited this request and asked us to wait ${formatWaitSeconds(waitMs)} before retrying.`
+      : "PeeringDB rate-limited this request. Please try again in a moment.";
+  }
+
+  return normalized;
+};
+
+const formatChunkFailure = (
+  metro: MetroKey,
+  label: string,
+  chunkIndex: number,
+  totalChunks: number,
+  rawMessage: string
+) => `${metro} ${label} chunk ${chunkIndex} of ${totalChunks} failed. ${getFriendlyPeeringDbMessage(rawMessage)}`;
 
 const fetchPeeringDbWithRetry = async <T,>(
   obj: string,
@@ -368,8 +407,8 @@ const HoverCard: React.FC<{
 
 const PeeringDBDashboard: React.FC = () => {
   // Metro selection for NEXT load.
-  const [selectedMetros, setSelectedMetros] = useState<MetroKey[]>(["Singapore"]);
-  const [openMetroRegion, setOpenMetroRegion] = useState<MetroRegion | null>("APAC");
+  const [selectedMetros, setSelectedMetros] = useState<MetroKey[]>([]);
+  const [openMetroRegion, setOpenMetroRegion] = useState<MetroRegion | null>(null);
   const metroSelectorRef = useRef<HTMLDivElement | null>(null);
 
   // Metros and timestamp for the LAST successful load.
@@ -437,13 +476,10 @@ const PeeringDBDashboard: React.FC = () => {
   const [gapSortField, setGapSortField] = useState<GapSortField>("source_capacity");
   const [gapSortDirection, setGapSortDirection] = useState<"asc" | "desc">("desc");
   const [selectedGapNetId, setSelectedGapNetId] = useState<number | null>(null);
+  const [showCompareControls, setShowCompareControls] = useState(false);
 
   // Facility org lookup.
   const [orgLookup, setOrgLookup] = useState<Record<number, any>>({});
-  const [snapshotRuns, setSnapshotRuns] = useState<SnapshotRun[]>([]);
-  const [snapshotLoading, setSnapshotLoading] = useState(false);
-  const [snapshotError, setSnapshotError] = useState<string | null>(null);
-
   const metroLabel =
     selectedMetros.length === 0
       ? "None"
@@ -480,6 +516,14 @@ const PeeringDBDashboard: React.FC = () => {
           )
         )
       : 0;
+  const showLoadPanel = Boolean(loadProgress || error || allNetError);
+  const activeLargeMetros = selectedMetros.filter((metro) => LARGE_METRO_HINTS.has(metro));
+  const largeMetroNotice =
+    loadProgress && [2, 3, 4].includes(loadProgress.step) && activeLargeMetros.length > 0
+      ? `${activeLargeMetros.join(", ")} ${
+          activeLargeMetros.length === 1 ? "is" : "are"
+        } larger metro${activeLargeMetros.length === 1 ? "" : "s"}, so facility and origin data can take longer to load.`
+      : null;
 
   useEffect(() => {
     if (!openMetroRegion) return;
@@ -653,36 +697,6 @@ const PeeringDBDashboard: React.FC = () => {
     });
   }, [lastLoadedMetros]);
 
-  // Load recent snapshot download links.
-  useEffect(() => {
-    if (process.env.NODE_ENV === "development") {
-      setSnapshotRuns([]);
-      setSnapshotError(null);
-      setSnapshotLoading(false);
-      return;
-    }
-
-    const loadSnapshots = async () => {
-      setSnapshotLoading(true);
-      setSnapshotError(null);
-      try {
-        const resp = await fetch(withApiRoot("/api/snapshots/latest?limit=6"));
-        const json = await resp.json().catch(() => null);
-        if (!resp.ok) {
-          throw new Error(json?.error || `Snapshot API error: ${resp.status}`);
-        }
-        const runs = Array.isArray(json?.runs) ? json.runs : [];
-        setSnapshotRuns(runs);
-      } catch (e: any) {
-        setSnapshotError(e?.message || "Failed to load snapshot downloads.");
-      } finally {
-        setSnapshotLoading(false);
-      }
-    };
-
-    loadSnapshots();
-  }, []);
-
   // ---- Load ALL networks for selectedMetros (using cache where possible) ----
   const handleLoadAllNetworks = async () => {
     if (selectedMetros.length === 0) {
@@ -738,6 +752,7 @@ const PeeringDBDashboard: React.FC = () => {
 
       const reportThrottleWait = (context: string) => ({
         waitMs,
+        attempt,
       }: {
         message: string;
         waitMs: number;
@@ -746,7 +761,7 @@ const PeeringDBDashboard: React.FC = () => {
         updateLoadProgress((prev) => ({
           ...prev,
           throttleMessage: `PeeringDB asked us to wait ${formatWaitSeconds(waitMs)} before retrying ${context}.`,
-          detail: `${prev.detail} Retrying after throttle.`,
+          detail: `Waiting ${formatWaitSeconds(waitMs)} to retry ${context} (retry ${attempt}).`,
         }));
       };
 
@@ -831,7 +846,9 @@ const PeeringDBDashboard: React.FC = () => {
             },
           }));
           throw new Error(
-            `Failed to load IX/FAC for ${cfg.city} (${cfg.country}): ${err?.message || err}`
+            `Failed to load IX/FAC for ${cfg.city} (${cfg.country}). ${getFriendlyPeeringDbMessage(
+              err?.message || String(err)
+            )}`
           );
         }
       }
@@ -965,7 +982,7 @@ const PeeringDBDashboard: React.FC = () => {
                   ix_id__in: param,
                   all: 1,
                 },
-                10,
+                NETIXLAN_FETCH_ATTEMPTS,
                 {
                   onThrottleWait: reportThrottleWait(
                     `${metro} netixlan chunk ${chunkIndex + 1} of ${ixChunks.length}`
@@ -973,7 +990,15 @@ const PeeringDBDashboard: React.FC = () => {
                 }
               ));
             } catch (err: any) {
-              throw new Error(`netixlan fetch failed for ${metro} ix_id__in=${param}: ${err?.message || err}`);
+              throw new Error(
+                formatChunkFailure(
+                  metro,
+                  "IX capacity",
+                  chunkIndex + 1,
+                  ixChunks.length,
+                  err?.message || String(err)
+                )
+              );
             }
 
             metroRows.push(...rows);
@@ -1072,7 +1097,7 @@ const PeeringDBDashboard: React.FC = () => {
                   fac_id__in: param,
                   all: 1,
                 },
-                10,
+                NETFAC_FETCH_ATTEMPTS,
                 {
                   onThrottleWait: reportThrottleWait(
                     `${metro} netfac chunk ${chunkIndex + 1} of ${facChunks.length}`
@@ -1080,7 +1105,15 @@ const PeeringDBDashboard: React.FC = () => {
                 }
               ));
             } catch (err: any) {
-              throw new Error(`netfac fetch failed for ${metro} fac_id__in=${param}: ${err?.message || err}`);
+              throw new Error(
+                formatChunkFailure(
+                  metro,
+                  "facility presence",
+                  chunkIndex + 1,
+                  facChunks.length,
+                  err?.message || String(err)
+                )
+              );
             }
 
             metroRows.push(...rows);
@@ -1193,7 +1226,11 @@ const PeeringDBDashboard: React.FC = () => {
             }
           ));
         } catch (err: any) {
-          throw new Error(`net fetch failed for id__in=${param}: ${err?.message || err}`);
+          throw new Error(
+            `Network detail chunk ${chunkIndex + 1} of ${netIdChunks.length} failed. ${getFriendlyPeeringDbMessage(
+              err?.message || String(err)
+            )}`
+          );
         }
 
         const returnedIds = new Set<number>();
@@ -1259,7 +1296,11 @@ const PeeringDBDashboard: React.FC = () => {
             }
           ));
         } catch (err: any) {
-          throw new Error(`org fetch failed for id__in=${param}: ${err?.message || err}`);
+          throw new Error(
+            `Origin detail chunk ${chunkIndex + 1} of ${orgIdChunks.length} failed. ${getFriendlyPeeringDbMessage(
+              err?.message || String(err)
+            )}`
+          );
         }
 
         idChunk.forEach((orgId) => {
@@ -1358,11 +1399,12 @@ const PeeringDBDashboard: React.FC = () => {
           ? {
               ...prev,
               stageLabel: "Load failed",
-              detail: e?.message || "Error loading networks for metros.",
+              detail: getFriendlyPeeringDbMessage(e?.message || "Error loading networks for metros."),
+              throttleMessage: null,
             }
           : prev
       );
-      setAllNetError(e?.message || "Error loading networks for metros.");
+      setAllNetError(getFriendlyPeeringDbMessage(e?.message || "Error loading networks for metros."));
     } finally {
       setAllNetLoading(false);
     }
@@ -3312,6 +3354,29 @@ const PeeringDBDashboard: React.FC = () => {
     });
   };
 
+  const applyComparePreset = (
+    mode: GapFilterMode,
+    options?: { source?: MetroKey[]; target?: MetroKey[] }
+  ) => {
+    const loaded = lastLoadedMetros.length > 0 ? lastLoadedMetros : selectedMetros;
+    const fallbackSource = loaded.slice(0, 1);
+    const fallbackTarget = loaded.slice(1, 2);
+
+    setGapFilterMode(mode);
+    setGapSourceMetros(
+      options?.source && options.source.length > 0
+        ? options.source
+        : fallbackSource.length > 0
+          ? fallbackSource
+          : gapSourceMetros
+    );
+    setGapTargetMetros(
+      options?.target
+        ? options.target.filter((metro) => !(options?.source || fallbackSource).includes(metro))
+        : fallbackTarget
+    );
+  };
+
   const toggleIxSelection = (id: number) => {
     setSelectedIxIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
   };
@@ -3357,322 +3422,445 @@ const PeeringDBDashboard: React.FC = () => {
       {/* HEADER */}
       <header
         style={{
-          padding: "12px 16px",
+          padding: "12px 16px 12px",
           borderBottom: `1px solid ${theme.headerBorder}`,
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
+          display: "grid",
+          gap: 8,
           background: theme.headerBg,
         }}
       >
-        <div>
-          <h2 style={{ margin: 0, fontSize: 22 }}>PeeringDB – Metro ASN × IX / Facility Matrix</h2>
-          <div style={{ fontSize: 14, color: theme.textMuted, marginTop: 4 }}>
-            Metro selection (for next load): <strong>{metroLabel}</strong>
-          </div>
-        </div>
         <div
           style={{
             display: "flex",
-            flexDirection: "column",
-            alignItems: "flex-end",
-            gap: 10,
-            position: "relative",
-            maxWidth: "58%",
+            justifyContent: "space-between",
+            alignItems: "flex-start",
+            gap: 16,
+            flexWrap: "wrap",
           }}
-          ref={metroSelectorRef}
         >
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
-            <button
-              type="button"
-              onClick={() => setActiveView("matrices")}
-              style={{
-                color: activeView === "matrices" ? "#052e16" : theme.textPrimary,
-                border: `1px solid ${activeView === "matrices" ? "#22c55e" : theme.cardBorder}`,
-                borderRadius: 9999,
-                padding: "8px 12px",
-                fontSize: 14,
-                background: activeView === "matrices" ? "#86efac" : "#0f172a",
-                cursor: "pointer",
-                fontWeight: 600,
-              }}
-            >
-              Matrix view
-            </button>
-            <button
-              type="button"
-              onClick={() => setActiveView("compare")}
-              style={{
-                color: activeView === "compare" ? "#082f49" : theme.textPrimary,
-                border: `1px solid ${activeView === "compare" ? "#38bdf8" : theme.cardBorder}`,
-                borderRadius: 9999,
-                padding: "8px 12px",
-                fontSize: 14,
-                background: activeView === "compare" ? "#bae6fd" : "#0f172a",
-                cursor: "pointer",
-                fontWeight: 600,
-              }}
-            >
-              Compare metros
-            </button>
-            <button
-              type="button"
-              onClick={() => setActiveView("insights")}
-              style={{
-                color: activeView === "insights" ? "#172554" : theme.textPrimary,
-                border: `1px solid ${activeView === "insights" ? "#818cf8" : theme.cardBorder}`,
-                borderRadius: 9999,
-                padding: "8px 12px",
-                fontSize: 14,
-                background: activeView === "insights" ? "#c7d2fe" : "#0f172a",
-                cursor: "pointer",
-                fontWeight: 600,
-              }}
-            >
-              Insights builder
-            </button>
-            <Link
-              to="/downloads"
-              style={{
-                color: theme.textPrimary,
-                textDecoration: "none",
-                border: `1px solid ${theme.cardBorder}`,
-                borderRadius: 9999,
-                padding: "8px 12px",
-                fontSize: 14,
-                background: "#0f172a",
-              }}
-            >
-              Open downloads
-            </Link>
+          <div style={{ minWidth: 280 }}>
+            <h2 style={{ margin: 0, fontSize: 22 }}>PeeringDB – Metro ASN × IX / Facility Matrix</h2>
+            <div style={{ fontSize: 14, color: theme.textMuted, marginTop: 4, lineHeight: 1.5 }}>
+              Choose metros by region, then load them when you are ready.
+            </div>
           </div>
           <div
             style={{
-              fontSize: 14,
-              color: theme.textSoft,
               display: "flex",
-              flexWrap: "wrap",
+              flexDirection: "row",
+              alignItems: "flex-end",
               gap: 8,
+              flexWrap: "wrap",
               justifyContent: "flex-end",
-              maxWidth: "100%",
-              paddingBottom: 4,
+              maxWidth: "62%",
             }}
           >
-            {REGION_ORDER.map((region) => {
-              const selectedCount = selectedCountsByRegion[region];
-              const isOpen = openMetroRegion === region;
-              return (
-                <button
-                  key={`region-${region}`}
-                  type="button"
-                  onClick={() => setOpenMetroRegion((prev) => (prev === region ? null : region))}
+            <div
+              style={{ position: "relative", display: "flex", flexDirection: "column", gap: 6 }}
+              ref={metroSelectorRef}
+            >
+              <div
+                style={{
+                  fontSize: 14,
+                  color: theme.textSoft,
+                  display: "flex",
+                  flexWrap: "wrap",
+                  gap: 8,
+                  justifyContent: "flex-end",
+                }}
+              >
+                {REGION_ORDER.map((region) => {
+                  const selectedCount = selectedCountsByRegion[region];
+                  const isOpen = openMetroRegion === region;
+                  return (
+                    <button
+                      key={`region-${region}`}
+                      type="button"
+                      onClick={() => setOpenMetroRegion((prev) => (prev === region ? null : region))}
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: 8,
+                        padding: "8px 12px",
+                        borderRadius: 9999,
+                        border: `1px solid ${isOpen ? "#38bdf8" : selectedCount > 0 ? "#22c55e" : theme.pillBorder}`,
+                        background: isOpen ? "#082f49" : "#0f172a",
+                        color: theme.textPrimary,
+                        cursor: "pointer",
+                        fontWeight: 600,
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      <span>{region}</span>
+                      <span
+                        style={{
+                          display: "inline-flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          minWidth: 22,
+                          height: 22,
+                          padding: "0 6px",
+                          borderRadius: 9999,
+                          background: selectedCount > 0 ? "#14532d" : "#111827",
+                          color: selectedCount > 0 ? "#bbf7d0" : theme.textMuted,
+                          fontSize: 13,
+                        }}
+                      >
+                        {selectedCount}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+
+              {openMetroRegion && (
+                <div
                   style={{
-                    display: "inline-flex",
-                    alignItems: "center",
-                    gap: 8,
-                    padding: "8px 12px",
-                    borderRadius: 9999,
-                    border: `1px solid ${isOpen ? "#38bdf8" : selectedCount > 0 ? "#22c55e" : theme.pillBorder}`,
-                    background: isOpen ? "#082f49" : "#0f172a",
-                    color: theme.textPrimary,
-                    cursor: "pointer",
-                    fontWeight: 600,
-                    whiteSpace: "nowrap",
+                    position: "absolute",
+                    top: "calc(100% + 8px)",
+                    left: 0,
+                    width: 360,
+                    maxWidth: "min(92vw, 360px)",
+                    padding: 12,
+                    borderRadius: 12,
+                    border: `1px solid ${theme.cardBorder}`,
+                    background: "#020617",
+                    boxShadow: "0 18px 42px rgba(0,0,0,0.45)",
+                    zIndex: 20,
                   }}
                 >
-                  <span>{region}</span>
-                  <span
+                  <div
                     style={{
-                      display: "inline-flex",
+                      display: "flex",
+                      justifyContent: "space-between",
                       alignItems: "center",
-                      justifyContent: "center",
-                      minWidth: 22,
-                      height: 22,
-                      padding: "0 6px",
-                      borderRadius: 9999,
-                      background: selectedCount > 0 ? "#14532d" : "#111827",
-                      color: selectedCount > 0 ? "#bbf7d0" : theme.textMuted,
-                      fontSize: 13,
+                      gap: 10,
+                      marginBottom: 10,
                     }}
                   >
-                    {selectedCount}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
+                    <div>
+                      <div style={{ fontSize: 11, color: theme.textMuted, textTransform: "uppercase" }}>
+                        Region selector
+                      </div>
+                      <div style={{ fontWeight: 700, fontSize: 16 }}>{openMetroRegion}</div>
+                    </div>
+                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
+                      <button
+                        type="button"
+                        onClick={() => selectAllRegionMetros(openMetroRegion)}
+                        style={{
+                          border: `1px solid ${theme.cardBorder}`,
+                          borderRadius: 9999,
+                          padding: "6px 10px",
+                          background: "#0f172a",
+                          color: theme.textSoft,
+                          cursor: "pointer",
+                          fontSize: 12,
+                        }}
+                      >
+                        Select all
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => clearRegionMetros(openMetroRegion)}
+                        style={{
+                          border: `1px solid ${theme.cardBorder}`,
+                          borderRadius: 9999,
+                          padding: "6px 10px",
+                          background: "#0f172a",
+                          color: theme.textSoft,
+                          cursor: "pointer",
+                          fontSize: 12,
+                        }}
+                      >
+                        Clear region
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setOpenMetroRegion(null)}
+                        style={{
+                          border: `1px solid ${theme.cardBorder}`,
+                          borderRadius: 9999,
+                          padding: "6px 10px",
+                          background: "#0f172a",
+                          color: theme.textSoft,
+                          cursor: "pointer",
+                          fontSize: 12,
+                        }}
+                      >
+                        Close
+                      </button>
+                    </div>
+                  </div>
 
-          {openMetroRegion && (
-            <div
+                  <div style={{ fontSize: 12, color: theme.textMuted, marginBottom: 10, lineHeight: 1.5 }}>
+                    Pick the metros you want in the next load. This keeps the top bar tidy while still
+                    letting us expand across APAC, EMEA, and AMER.
+                  </div>
+
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+                      gap: 8,
+                    }}
+                  >
+                    {METROS_BY_REGION[openMetroRegion].map((metro) => (
+                      <label
+                        key={`metro-picker-${metro}`}
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 8,
+                          padding: "8px 10px",
+                          borderRadius: 10,
+                          border: `1px solid ${selectedMetros.includes(metro) ? "#22c55e" : theme.cardBorder}`,
+                          background: selectedMetros.includes(metro) ? "#072d1f" : "#0b1120",
+                          cursor: "pointer",
+                        }}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={selectedMetros.includes(metro)}
+                          onChange={() => toggleMetroSelection(metro)}
+                          style={{ accentColor: "#22c55e" }}
+                        />
+                        <div style={{ display: "flex", flexDirection: "column" }}>
+                          <span style={{ color: theme.textPrimary }}>{metro}</span>
+                          <span style={{ fontSize: 11, color: theme.textMuted }}>
+                            {METROS[metro].city}, {METROS[metro].country}
+                          </span>
+                        </div>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <button
               style={{
-                position: "absolute",
-                top: 88,
-                right: 0,
-                width: 360,
-                maxWidth: "100%",
-                padding: 12,
+                minWidth: 220,
+                padding: "11px 16px",
+                background: allNetLoading ? "#15803d" : "#16a34a",
+                color: "#ecfdf5",
                 borderRadius: 12,
-                border: `1px solid ${theme.cardBorder}`,
-                background: "#020617",
-                boxShadow: "0 18px 42px rgba(0,0,0,0.45)",
-                zIndex: 20,
+                border: `1px solid #22c55e`,
+                cursor: allNetLoading ? "wait" : "pointer",
+                opacity: allNetLoading ? 0.8 : 1,
+                fontWeight: 700,
+                fontSize: 15,
+                boxShadow: "0 8px 18px rgba(34,197,94,0.12)",
               }}
+              onClick={handleLoadAllNetworks}
+              disabled={allNetLoading || selectedMetros.length === 0}
+              title={selectedMetros.length === 0 ? "Choose at least one metro first" : undefined}
             >
+              {allNetLoading
+                ? metroNetworks.length > 0
+                  ? "Refreshing loaded metros…"
+                  : "Loading all networks…"
+                : "Load all networks in metros"}
+            </button>
+          </div>
+        </div>
+
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "flex-start",
+            gap: 16,
+            flexWrap: "wrap",
+          }}
+        >
+          <div style={{ minWidth: 260, flex: "1 1 420px", display: "grid", gap: 8 }}>
+            <div style={{ fontSize: 14, color: theme.textSecondary, lineHeight: 1.5 }}>
+              {selectedMetros.length > 0 ? (
+                <>
+                  Selected: <strong style={{ color: theme.textPrimary }}>{metroLabel}</strong>
+                </>
+              ) : (
+                <>
+                  Choose metros from <strong style={{ color: theme.textPrimary }}>APAC</strong>,{" "}
+                  <strong style={{ color: theme.textPrimary }}>EMEA</strong>, or{" "}
+                  <strong style={{ color: theme.textPrimary }}>AMER</strong> to begin.
+                </>
+              )}
+              {lastLoadedMetros.length > 0 && (
+                <>
+                  {" · "}Loaded: <strong style={{ color: theme.textPrimary }}>{loadedMetroLabel}</strong>
+                </>
+              )}
+              {lastLoadedAt && (
+                <>
+                  {" · "}Last refresh{" "}
+                  <strong style={{ color: theme.textPrimary }}>{lastLoadedAt.toLocaleString()}</strong>
+                </>
+              )}
+            </div>
+
+            {selectedMetros.length > 0 && (
               <div
                 style={{
                   display: "flex",
-                  justifyContent: "space-between",
-                  alignItems: "center",
-                  gap: 10,
-                  marginBottom: 10,
-                }}
-                >
-                  <div>
-                    <div style={{ fontSize: 11, color: theme.textMuted, textTransform: "uppercase" }}>
-                      Region selector
-                    </div>
-                    <div style={{ fontWeight: 700, fontSize: 16 }}>{openMetroRegion}</div>
-                  </div>
-                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
-                    <button
-                      type="button"
-                      onClick={() => selectAllRegionMetros(openMetroRegion)}
-                      style={{
-                        border: `1px solid ${theme.cardBorder}`,
-                        borderRadius: 9999,
-                        padding: "6px 10px",
-                        background: "#0f172a",
-                        color: theme.textSoft,
-                        cursor: "pointer",
-                        fontSize: 12,
-                      }}
-                    >
-                      Select all
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => clearRegionMetros(openMetroRegion)}
-                      style={{
-                        border: `1px solid ${theme.cardBorder}`,
-                        borderRadius: 9999,
-                        padding: "6px 10px",
-                        background: "#0f172a",
-                        color: theme.textSoft,
-                        cursor: "pointer",
-                        fontSize: 12,
-                      }}
-                    >
-                      Clear region
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setOpenMetroRegion(null)}
-                      style={{
-                        border: `1px solid ${theme.cardBorder}`,
-                        borderRadius: 9999,
-                        padding: "6px 10px",
-                        background: "#0f172a",
-                        color: theme.textSoft,
-                        cursor: "pointer",
-                        fontSize: 12,
-                      }}
-                    >
-                      Close
-                    </button>
-                  </div>
-              </div>
-
-              <div style={{ fontSize: 12, color: theme.textMuted, marginBottom: 10, lineHeight: 1.5 }}>
-                Pick the metros you want in the next load. This keeps the top bar tidy while still
-                letting us expand across APAC, EMEA, and AMER.
-              </div>
-
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+                  flexWrap: "wrap",
                   gap: 8,
                 }}
               >
-                {METROS_BY_REGION[openMetroRegion].map((metro) => (
-                  <label
-                    key={`metro-picker-${metro}`}
+                {selectedMetros.map((metro) => (
+                  <button
+                    key={`selected-pill-${metro}`}
+                    type="button"
+                    onClick={() => toggleMetroSelection(metro)}
                     style={{
-                      display: "flex",
+                      display: "inline-flex",
                       alignItems: "center",
                       gap: 8,
-                      padding: "8px 10px",
-                      borderRadius: 10,
-                      border: `1px solid ${selectedMetros.includes(metro) ? "#22c55e" : theme.cardBorder}`,
-                      background: selectedMetros.includes(metro) ? "#072d1f" : "#0b1120",
+                      padding: "6px 10px",
+                      borderRadius: 9999,
+                      border: `1px solid ${theme.cardBorder}`,
+                      background: "#0b1120",
+                      color: theme.textPrimary,
                       cursor: "pointer",
+                      fontSize: 13,
                     }}
+                    title={`Remove ${metro} from selection`}
                   >
-                    <input
-                      type="checkbox"
-                      checked={selectedMetros.includes(metro)}
-                      onChange={() => toggleMetroSelection(metro)}
-                      style={{ accentColor: "#22c55e" }}
-                    />
-                    <div style={{ display: "flex", flexDirection: "column" }}>
-                      <span style={{ color: theme.textPrimary }}>{metro}</span>
-                      <span style={{ fontSize: 11, color: theme.textMuted }}>
-                        {METROS[metro].city}, {METROS[metro].country}
-                      </span>
-                    </div>
-                  </label>
+                    <span>{metro}</span>
+                    <span style={{ color: "#fca5a5", fontWeight: 700 }}>×</span>
+                  </button>
                 ))}
               </div>
+            )}
+          </div>
+
+          {showLoadPanel && (
+            <div
+              style={{
+                display: "grid",
+                gap: 8,
+                width: "min(100%, 560px)",
+                flex: "0 1 560px",
+                marginLeft: "auto",
+              }}
+            >
+              {error && (
+                <div
+                  style={{
+                    color: "#fecaca",
+                    background: "#450a0a",
+                    border: "1px solid #b91c1c",
+                    borderRadius: 10,
+                    padding: 8,
+                    fontSize: 13,
+                  }}
+                >
+                  Error: {error}
+                </div>
+              )}
+
+              {allNetError && (
+                <div
+                  style={{
+                    color: "#fecaca",
+                    background: "#450a0a",
+                    border: "1px solid #b91c1c",
+                    borderRadius: 10,
+                    padding: 8,
+                    fontSize: 13,
+                  }}
+                >
+                  Error: {allNetError}
+                </div>
+              )}
+
+              {loadProgress && (
+                <div
+                  style={{
+                    padding: "8px 10px",
+                    borderRadius: 10,
+                    background: "#0b1220",
+                    border: `1px solid ${theme.cardBorder}`,
+                  }}
+                >
+                  <div
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                      gap: 8,
+                      marginBottom: 4,
+                      flexWrap: "wrap",
+                    }}
+                  >
+                    <div style={{ fontSize: 12, fontWeight: 700, color: theme.textSecondary }}>
+                      {loadProgress.stageLabel}
+                    </div>
+                    <div style={{ fontSize: 11, color: theme.textMuted }}>
+                      Step {loadProgress.step} / {loadProgress.totalSteps}
+                    </div>
+                  </div>
+                  <div
+                    style={{
+                      height: 8,
+                      borderRadius: 9999,
+                      overflow: "hidden",
+                      background: "#111827",
+                      border: `1px solid ${theme.gridBorder}`,
+                      marginBottom: 4,
+                    }}
+                  >
+                    <div
+                      style={{
+                        width: `${loadPercent}%`,
+                        height: "100%",
+                        background: "linear-gradient(90deg, #22c55e 0%, #38bdf8 60%, #f59e0b 100%)",
+                        transition: "width 180ms ease",
+                      }}
+                    />
+                  </div>
+                  <div style={{ fontSize: 12, color: theme.textSecondary, lineHeight: 1.5 }}>
+                    {loadProgress.detail}
+                  </div>
+                  {largeMetroNotice && (
+                    <div
+                      style={{
+                        marginTop: 6,
+                        fontSize: 12,
+                        color: "#cbd5e1",
+                        background: "#111827",
+                        border: `1px solid ${theme.gridBorder}`,
+                        borderRadius: 8,
+                        padding: 8,
+                        lineHeight: 1.5,
+                      }}
+                    >
+                      {largeMetroNotice}
+                    </div>
+                  )}
+                  {loadProgress.throttleMessage && (
+                    <div
+                      style={{
+                        marginTop: 6,
+                        fontSize: 12,
+                        color: "#fde68a",
+                        background: "#3f2a08",
+                        border: "1px solid #a16207",
+                        borderRadius: 8,
+                        padding: 8,
+                        lineHeight: 1.5,
+                      }}
+                    >
+                      {loadProgress.throttleMessage}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           )}
-
-          <div
-            style={{
-              fontSize: 13,
-              color: theme.textMuted,
-              textAlign: "right",
-              maxWidth: 520,
-              lineHeight: 1.5,
-            }}
-          >
-            Selected metros: <strong style={{ color: theme.textPrimary }}>{metroLabel}</strong>
-          </div>
-          <div
-            style={{
-              display: "flex",
-              flexWrap: "wrap",
-              gap: 8,
-              justifyContent: "flex-end",
-              maxWidth: 520,
-            }}
-          >
-            {selectedMetros.map((metro) => (
-              <button
-                key={`selected-pill-${metro}`}
-                type="button"
-                onClick={() => toggleMetroSelection(metro)}
-                style={{
-                  display: "inline-flex",
-                  alignItems: "center",
-                  gap: 8,
-                  padding: "6px 10px",
-                  borderRadius: 9999,
-                  border: `1px solid ${theme.cardBorder}`,
-                  background: "#0b1120",
-                  color: theme.textPrimary,
-                  cursor: "pointer",
-                  fontSize: 13,
-                }}
-                title={`Remove ${metro} from selection`}
-              >
-                <span>{metro}</span>
-                <span style={{ color: "#fca5a5", fontWeight: 700 }}>×</span>
-              </button>
-            ))}
-          </div>
         </div>
       </header>
-
       <main style={{ display: "flex", flex: 1, overflow: "hidden" }}>
         {/* SIDEBAR */}
         <aside
@@ -3686,7 +3874,95 @@ const PeeringDBDashboard: React.FC = () => {
             background: "#020617",
           }}
         >
-          {/* Summary box */}
+          <div
+            style={{
+              marginBottom: 12,
+              padding: 12,
+              borderRadius: 12,
+              background: theme.cardBg,
+              border: `1px solid ${theme.cardBorder}`,
+              boxShadow: "0 10px 24px rgba(0,0,0,0.28)",
+            }}
+          >
+            <div style={{ fontSize: 11, color: theme.textMuted, marginBottom: 8, fontWeight: 700, textTransform: "uppercase" }}>
+              Workspace
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              <button
+                type="button"
+                onClick={() => setActiveView("matrices")}
+                style={{
+                  width: "100%",
+                  textAlign: "left",
+                  color: activeView === "matrices" ? "#052e16" : theme.textPrimary,
+                  border: `1px solid ${activeView === "matrices" ? "#22c55e" : theme.cardBorder}`,
+                  borderRadius: 10,
+                  padding: "10px 12px",
+                  fontSize: 14,
+                  background: activeView === "matrices" ? "#86efac" : "#0f172a",
+                  cursor: "pointer",
+                  fontWeight: 700,
+                }}
+              >
+                Matrix view
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveView("compare")}
+                style={{
+                  width: "100%",
+                  textAlign: "left",
+                  color: activeView === "compare" ? "#082f49" : theme.textPrimary,
+                  border: `1px solid ${activeView === "compare" ? "#38bdf8" : theme.cardBorder}`,
+                  borderRadius: 10,
+                  padding: "10px 12px",
+                  fontSize: 14,
+                  background: activeView === "compare" ? "#bae6fd" : "#0f172a",
+                  cursor: "pointer",
+                  fontWeight: 700,
+                }}
+              >
+                Compare metros
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveView("insights")}
+                style={{
+                  width: "100%",
+                  textAlign: "left",
+                  color: activeView === "insights" ? "#172554" : theme.textPrimary,
+                  border: `1px solid ${activeView === "insights" ? "#818cf8" : theme.cardBorder}`,
+                  borderRadius: 10,
+                  padding: "10px 12px",
+                  fontSize: 14,
+                  background: activeView === "insights" ? "#c7d2fe" : "#0f172a",
+                  cursor: "pointer",
+                  fontWeight: 700,
+                }}
+              >
+                Insights builder
+              </button>
+              <Link
+                to="/downloads"
+                style={{
+                  width: "100%",
+                  boxSizing: "border-box",
+                  textAlign: "left",
+                  color: theme.textPrimary,
+                  textDecoration: "none",
+                  border: `1px solid ${theme.cardBorder}`,
+                  borderRadius: 10,
+                  padding: "10px 12px",
+                  fontSize: 14,
+                  background: "#0f172a",
+                  fontWeight: 700,
+                }}
+              >
+                Open downloads
+              </Link>
+            </div>
+          </div>
+
           <div
             style={{
               marginBottom: 12,
@@ -3696,328 +3972,59 @@ const PeeringDBDashboard: React.FC = () => {
               border: `1px solid ${theme.cardBorder}`,
             }}
           >
-            <div style={{ fontSize: 12, color: theme.textMuted, marginBottom: 4, fontWeight: 600 }}>
+            <div style={{ fontSize: 11, color: theme.textMuted, marginBottom: 8, fontWeight: 700, textTransform: "uppercase" }}>
               Summary
             </div>
-            <div>IXes in loaded metros: {ixData.length}</div>
-            <div>Facilities in loaded metros: {facData.length}</div>
-          </div>
-
-          <div
-            style={{
-              marginBottom: 12,
-              padding: 10,
-              borderRadius: 8,
-              background: theme.cardBg,
-              border: `1px solid ${theme.cardBorder}`,
-            }}
-          >
-            <div
-              style={{
-                fontSize: 12,
-                color: theme.textMuted,
-                marginBottom: 6,
-                fontWeight: 600,
-              }}
-            >
-              Snapshot downloads
-            </div>
-            {process.env.NODE_ENV === "development" && (
-              <div style={{ color: theme.textMuted, marginBottom: 6 }}>
-                Hidden in local preview.
-              </div>
-            )}
-            {snapshotLoading && <div style={{ color: theme.textMuted }}>Loading snapshot links…</div>}
-            {snapshotError && (
-              <div style={{ color: "#fca5a5", marginBottom: 6, lineHeight: 1.4 }}>
-                {snapshotError}
-              </div>
-            )}
-            {!snapshotLoading &&
-              !snapshotError &&
-              snapshotRuns.length === 0 &&
-              process.env.NODE_ENV !== "development" && (
-              <div style={{ color: theme.textMuted }}>No completed snapshots found.</div>
-              )}
-            {snapshotRuns.slice(0, 3).map((run) => (
-              <div key={run.snapshotDate} style={{ marginBottom: 8 }}>
-                <div style={{ marginBottom: 2 }}>
-                  <strong>{run.snapshotDate}</strong>
-                  {run.netCount != null && run.orgCount != null && (
-                    <span style={{ color: theme.textMuted }}>
-                      {" "}
-                      ({run.netCount} nets / {run.orgCount} orgs)
-                    </span>
-                  )}
-                </div>
-                <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-                  {run.netUrl && (
-                    <a href={run.netUrl} target="_blank" rel="noreferrer" style={{ color: "#86efac" }}>
-                      net.jsonl.gz
-                    </a>
-                  )}
-                  {run.orgUrl && (
-                    <a href={run.orgUrl} target="_blank" rel="noreferrer" style={{ color: "#86efac" }}>
-                      org.jsonl.gz
-                    </a>
-                  )}
-                  {run.manifestUrl && (
-                    <a
-                      href={run.manifestUrl}
-                      target="_blank"
-                      rel="noreferrer"
-                      style={{ color: "#86efac" }}
-                    >
-                      manifest.json
-                    </a>
-                  )}
-                  <a
-                    href={run.networksCsvUrl || buildSnapshotCsvUrl(run.snapshotDate)}
-                    target="_blank"
-                    rel="noreferrer"
-                    style={{ color: "#86efac" }}
-                  >
-                    networks.csv
-                  </a>
-                  {!run.netUrl && !run.orgUrl && !run.manifestUrl && (
-                    <span style={{ color: theme.textMuted }}>No downloadable links stored for this run.</span>
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
-
-          {/* Sidebar width control */}
-          <div style={{ marginBottom: 12 }}>
-            <div style={{ fontSize: 12, color: theme.textMuted, marginBottom: 2 }}>
-              Sidebar width (px)
-            </div>
-            <input
-              type="range"
-              min={260}
-              max={420}
-              value={sidebarWidth}
-              onChange={(e) => setSidebarWidth(Number(e.target.value))}
-              style={{ width: "100%" }}
-            />
-            <div style={{ fontSize: 12, color: theme.textMuted, marginTop: 2 }}>
-              {sidebarWidth}px
-            </div>
-          </div>
-
-          {error && (
-            <div
-              style={{
-                color: "#fecaca",
-                background: "#450a0a",
-                border: "1px solid #b91c1c",
-                borderRadius: 8,
-                padding: 8,
-                marginBottom: 12,
-              }}
-            >
-              Error: {error}
-            </div>
-          )}
-
-          <button
-            style={{
-              width: "100%",
-              padding: 10,
-              background: "#16a34a",
-              color: "#ecfdf5",
-              borderRadius: 8,
-              border: `1px solid #22c55e`,
-              cursor: allNetLoading ? "wait" : "pointer",
-              opacity: allNetLoading ? 0.7 : 1,
-              fontWeight: 600,
-              marginBottom: 6,
-            }}
-            onClick={handleLoadAllNetworks}
-            disabled={allNetLoading}
-          >
-            {allNetLoading
-              ? metroNetworks.length > 0
-                ? "Refreshing loaded metros…"
-                : "Loading all networks…"
-              : "Load all networks in metros"}
-          </button>
-
-          <div style={{ fontSize: 12, color: theme.textMuted, marginBottom: 10, lineHeight: 1.5 }}>
-            Large multi-metro loads can take a while. We’ll keep the current results visible while
-            the refresh is in progress.
-          </div>
-
-          {loadProgress && (
+            <div style={{ display: "grid", gap: 8 }}>
               <div
                 style={{
-                  marginBottom: 12,
                   padding: 10,
-                  borderRadius: 8,
-                  background: theme.cardBgElevated,
+                  borderRadius: 10,
                   border: `1px solid ${theme.cardBorder}`,
-                  boxShadow: "0 10px 24px rgba(0,0,0,0.28)",
+                  background: "#0f172a",
                 }}
               >
+                <div style={{ fontSize: 11, color: theme.textMuted, marginBottom: 4, textTransform: "uppercase" }}>
+                  Loaded IXs
+                </div>
+                <div style={{ fontSize: 22, fontWeight: 700, color: theme.capacityAccentSoft }}>
+                  {formatCount(ixData.length)}
+                </div>
+              </div>
               <div
                 style={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  alignItems: "center",
-                  gap: 10,
-                  marginBottom: 6,
+                  padding: 10,
+                  borderRadius: 10,
+                  border: `1px solid ${theme.cardBorder}`,
+                  background: "#0f172a",
                 }}
               >
-                <div style={{ fontSize: 12, fontWeight: 700, color: theme.textSecondary }}>Load progress</div>
-                <div style={{ fontSize: 11, color: theme.textMuted }}>
-                  Step {loadProgress.step} / {loadProgress.totalSteps}
+                <div style={{ fontSize: 11, color: theme.textMuted, marginBottom: 4, textTransform: "uppercase" }}>
+                  Loaded facilities
+                </div>
+                <div style={{ fontSize: 22, fontWeight: 700, color: theme.facilityAccentSoft }}>
+                  {formatCount(facData.length)}
                 </div>
               </div>
-
-              <div
-                style={{
-                  height: 10,
-                  borderRadius: 9999,
-                  overflow: "hidden",
-                  background: "#111827",
-                  border: `1px solid ${theme.gridBorder}`,
-                  marginBottom: 8,
-                }}
-              >
-                <div
-                  style={{
-                    width: `${loadPercent}%`,
-                    height: "100%",
-                    background: "linear-gradient(90deg, #22c55e 0%, #38bdf8 60%, #f59e0b 100%)",
-                    transition: "width 180ms ease",
-                  }}
-                />
-              </div>
-
-              <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 4, color: theme.textSecondary }}>
-                {loadProgress.stageLabel}
-              </div>
-              <div style={{ fontSize: 12, color: theme.textSecondary, marginBottom: 6, lineHeight: 1.5 }}>
-                {loadProgress.detail}
-              </div>
-              {loadProgress.progressTotal > 0 && (
-                <div style={{ fontSize: 11, color: theme.textMuted, marginBottom: 8 }}>
-                  Progress: {formatCount(Math.min(loadProgress.progressCurrent, loadProgress.progressTotal))} /{" "}
-                  {formatCount(loadProgress.progressTotal)}
-                </div>
-              )}
-              {loadProgress.throttleMessage && (
-                <div
-                  style={{
-                    fontSize: 11,
-                    color: "#fde68a",
-                    background: "#3f2a08",
-                    border: "1px solid #a16207",
-                    borderRadius: 8,
-                    padding: 8,
-                    marginBottom: 8,
-                    lineHeight: 1.5,
-                  }}
-                >
-                  {loadProgress.throttleMessage}
-                </div>
-              )}
-
-              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                {selectedMetros.map((metro) => {
-                  const status = loadProgress.metroStatuses[metro] || "queued";
-                  const color =
-                    status === "ready"
-                      ? theme.successAccent
-                      : status === "cached"
-                      ? theme.capacityAccent
-                      : status === "loading"
-                      ? theme.facilityAccent
-                      : status === "error"
-                      ? theme.dangerAccent
-                      : "#6b7280";
-                  const label =
-                    status === "ready"
-                      ? "ready"
-                      : status === "cached"
-                      ? "cached"
-                      : status === "loading"
-                      ? "loading"
-                      : status === "error"
-                      ? "error"
-                      : "queued";
-                  return (
-                    <div
-                      key={`load-status-${metro}`}
-                      style={{
-                        display: "flex",
-                        justifyContent: "space-between",
-                        alignItems: "center",
-                        gap: 10,
-                        fontSize: 12,
-                      }}
-                    >
-                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                        <span
-                          style={{
-                            width: 10,
-                            height: 10,
-                            borderRadius: 9999,
-                            background: color,
-                            boxShadow: `0 0 0 2px ${theme.appBg}`,
-                          }}
-                        />
-                        <span>{metro}</span>
-                      </div>
-                      <span style={{ color: theme.textSecondary, textTransform: "capitalize", fontWeight: 600 }}>
-                        {label}
-                      </span>
-                    </div>
-                  );
-                })}
-              </div>
             </div>
-          )}
-
-          {lastLoadedAt && (
-            <div style={{ fontSize: 12, color: theme.textMuted, marginBottom: 4 }}>
-              Last loaded: {lastLoadedAt.toLocaleString()}
-            </div>
-          )}
-          {lastLoadedMetros.length > 0 && (
-            <div style={{ fontSize: 12, color: theme.textMuted, marginBottom: 10 }}>
-              Data currently loaded for: {loadedMetroLabel}
-            </div>
-          )}
-
-          {allNetError && (
-            <div
-              style={{
-                marginBottom: 12,
-                color: "#fecaca",
-                background: "#450a0a",
-                border: "1px solid #b91c1c",
-                borderRadius: 8,
-                padding: 8,
-              }}
-            >
-              Error: {allNetError}
-            </div>
-          )}
+          </div>
 
           {metroNetworks.length > 0 && (
-            <>
+            <div
+              style={{
+                marginBottom: 12,
+                padding: 12,
+                borderRadius: 12,
+                background: theme.cardBg,
+                border: `1px solid ${theme.cardBorder}`,
+                boxShadow: "0 10px 24px rgba(0,0,0,0.28)",
+              }}
+            >
               {/* Network filters */}
-              <div
-                style={{
-                  marginTop: 14,
-                  marginBottom: 8,
-                  fontWeight: 700,
-                  fontSize: 13,
-                }}
-              >
-                Network filters
+              <div style={{ fontSize: 11, color: theme.textMuted, marginBottom: 8, fontWeight: 700, textTransform: "uppercase" }}>
+                Matrix filters
               </div>
+              <div style={{ marginBottom: 8, fontWeight: 700, fontSize: 14 }}>Filter the current matrix view</div>
               <div style={{ marginBottom: 4 }}>Filter by ASN (multi):</div>
               <input
                 style={{
@@ -4205,8 +4212,35 @@ const PeeringDBDashboard: React.FC = () => {
                   <div style={{ fontSize: 12, color: theme.textMuted }}>No facility match.</div>
                 )}
               </div>
-            </>
+            </div>
           )}
+
+          <div
+            style={{
+              padding: 12,
+              borderRadius: 12,
+              background: theme.cardBg,
+              border: `1px solid ${theme.cardBorder}`,
+            }}
+          >
+            <div style={{ fontSize: 11, color: theme.textMuted, marginBottom: 6, fontWeight: 700, textTransform: "uppercase" }}>
+              Display
+            </div>
+            <div style={{ fontSize: 13, color: theme.textSecondary, marginBottom: 6 }}>
+              Sidebar width
+            </div>
+            <input
+              type="range"
+              min={260}
+              max={420}
+              value={sidebarWidth}
+              onChange={(e) => setSidebarWidth(Number(e.target.value))}
+              style={{ width: "100%" }}
+            />
+            <div style={{ fontSize: 12, color: theme.textMuted, marginTop: 4 }}>
+              {sidebarWidth}px
+            </div>
+          </div>
         </aside>
 
         {/* MAIN CONTENT */}
@@ -4350,7 +4384,9 @@ const PeeringDBDashboard: React.FC = () => {
                   })}
                 </div>
 
-                <div style={{ color: theme.textSecondary, lineHeight: 1.6, marginBottom: 12 }}>{insightBuilderSummary}</div>
+                <div style={{ color: theme.textSecondary, lineHeight: 1.6, marginBottom: 12 }}>
+                  {insightBuilderSummary}
+                </div>
 
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 14 }}>
                   <label>
@@ -5382,43 +5418,139 @@ const PeeringDBDashboard: React.FC = () => {
                   boxShadow: "0 10px 25px rgba(0,0,0,0.35)",
                 }}
               >
-                <div style={{ fontSize: 11, color: theme.textMuted, textTransform: "uppercase" }}>
-                  Compare view
-                </div>
-                <h3 style={{ margin: "2px 0 6px" }}>Metro comparison – deployed capacity and presence</h3>
-                <div style={{ fontSize: 12, color: theme.textMuted, lineHeight: 1.5 }}>
-                  This view compares the currently loaded metros. Capacity is summed across all IXs in
-                  each metro. Presence counts every network-to-facility/DC relationship across the metro.
-                </div>
-              </div>
-
-              <div
-                style={{
-                  padding: 14,
-                  background: theme.cardBg,
-                  borderRadius: 10,
-                  border: `1px solid ${theme.cardBorder}`,
-                  boxShadow: "0 10px 25px rgba(0,0,0,0.35)",
-                }}
-              >
-                <div style={{ fontSize: 11, color: theme.textMuted, textTransform: "uppercase" }}>
-                  Explorer
-                </div>
-                <h3 style={{ margin: "2px 0 10px" }}>Presence gaps by selected metro</h3>
-                <div style={{ fontSize: 12, color: theme.textMuted, lineHeight: 1.5, marginBottom: 12 }}>
-                  Use this to identify networks that are present in some metros but missing in others.
-                  A network counts as present if it appears via IX capacity, facility presence, or both.
-                </div>
-
                 <div
                   style={{
                     display: "flex",
-                    gap: 10,
+                    justifyContent: "space-between",
+                    alignItems: "flex-start",
+                    gap: 12,
                     flexWrap: "wrap",
-                    alignItems: "flex-end",
                     marginBottom: 12,
                   }}
                 >
+                  <div style={{ flex: "1 1 460px" }}>
+                    <div style={{ fontSize: 11, color: theme.textMuted, textTransform: "uppercase" }}>
+                      Compare view
+                    </div>
+                    <h3 style={{ margin: "2px 0 6px" }}>Presence gaps by selected metro</h3>
+                    <div style={{ fontSize: 12, color: theme.textMuted, lineHeight: 1.5 }}>
+                      Compare the currently loaded metros and focus on who is present, missing, unique, or shared.
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowCompareControls((prev) => !prev)}
+                    style={{
+                      fontSize: 12,
+                      padding: "9px 12px",
+                      borderRadius: 9999,
+                      border: `1px solid ${theme.cardBorder}`,
+                      background: theme.pillBg,
+                      color: theme.textSoft,
+                      cursor: "pointer",
+                      fontWeight: 700,
+                    }}
+                  >
+                    {showCompareControls ? "Hide compare setup" : "Show compare setup"}
+                  </button>
+                </div>
+
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: showCompareControls ? 12 : 10 }}>
+                  <span style={{ ...metricChipStyle("capacity"), background: "#0f172a", borderColor: theme.gridBorder }}>
+                    {gapFilterMode === "present_in_source_not_target"
+                      ? "Present in one, missing from another"
+                      : gapFilterMode === "missing_somewhere"
+                        ? "Present in some, missing in others"
+                        : gapFilterMode === "only_one_metro"
+                          ? "Only in one selected metro"
+                          : gapFilterMode === "present_in_all"
+                            ? "Shared across all selected metros"
+                            : "All loaded networks"}
+                  </span>
+                  {gapSourceMetros.length > 0 && (
+                    <span style={{ ...metricChipStyle("facility"), background: "#0f172a", borderColor: theme.gridBorder }}>
+                      Present in: {gapSourceMetros.join(", ")}
+                    </span>
+                  )}
+                  {gapTargetMetros.length > 0 && (
+                    <span style={{ ...metricChipStyle("facility"), background: "#0f172a", borderColor: theme.gridBorder }}>
+                      Missing from: {gapTargetMetros.join(", ")}
+                    </span>
+                  )}
+                  <span style={{ ...metricChipStyle("capacity"), background: "#0f172a", borderColor: theme.gridBorder }}>
+                    {formatCount(presenceGapRows.length)} networks
+                  </span>
+                </div>
+
+                {showCompareControls && (
+                  <>
+                    <div
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+                        gap: 10,
+                        marginBottom: 12,
+                      }}
+                    >
+                      {[
+                        {
+                          key: "present_in_source_not_target" as GapFilterMode,
+                          title: "Present in one metro, missing from another",
+                          description: "Good for gap analysis between a source and target metro.",
+                        },
+                        {
+                          key: "missing_somewhere" as GapFilterMode,
+                          title: "Present in some, missing in others",
+                          description: "Find networks that are not consistently present across the loaded metros.",
+                        },
+                        {
+                          key: "only_one_metro" as GapFilterMode,
+                          title: "Only in one selected metro",
+                          description: "Surface networks that are unique to just one of the loaded metros.",
+                        },
+                        {
+                          key: "present_in_all" as GapFilterMode,
+                          title: "Shared across all selected metros",
+                          description: "See the common network footprint shared by every loaded metro.",
+                        },
+                      ].map((preset) => {
+                        const selected = gapFilterMode === preset.key;
+                        return (
+                          <button
+                            key={`compare-preset-${preset.key}`}
+                            type="button"
+                            onClick={() => applyComparePreset(preset.key)}
+                            style={{
+                              textAlign: "left",
+                              padding: 12,
+                              borderRadius: 12,
+                              border: `1px solid ${selected ? theme.capacityAccent : theme.cardBorder}`,
+                              background: selected ? "rgba(8,47,73,0.32)" : "#020617",
+                              color: theme.textPrimary,
+                              cursor: "pointer",
+                              boxShadow: selected ? "0 0 0 1px rgba(56, 189, 248, 0.18)" : "none",
+                            }}
+                          >
+                            <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 6 }}>
+                              {preset.title}
+                            </div>
+                            <div style={{ color: theme.textSecondary, lineHeight: 1.5, fontSize: 12 }}>
+                              {preset.description}
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    <div
+                      style={{
+                        display: "flex",
+                        gap: 10,
+                        flexWrap: "wrap",
+                        alignItems: "flex-end",
+                        marginBottom: 12,
+                      }}
+                    >
                   <label style={{ minWidth: 240 }}>
                     <div style={{ fontSize: 12, color: theme.textMuted, marginBottom: 4 }}>
                       Explore networks
@@ -5601,7 +5733,9 @@ const PeeringDBDashboard: React.FC = () => {
                   >
                     Download presence CSV
                   </button>
-                </div>
+                    </div>
+                  </>
+                )}
 
                 <div style={{ fontSize: 12, color: theme.textMuted, marginBottom: 10 }}>
                   Showing <strong style={{ color: theme.textPrimary }}>{formatCount(presenceGapRows.length)}</strong>{" "}
