@@ -238,14 +238,16 @@ const oneDecimalFormatter = new Intl.NumberFormat("en-US", {
 });
 const REQUEST_GAP_MS = 500;
 const DETAIL_REQUEST_GAP_MS = 1200;
-const DETAIL_FETCH_ATTEMPTS = 25;
+const DEFAULT_FETCH_ATTEMPTS = 3;
+const DETAIL_FETCH_ATTEMPTS = 5;
 const ORG_CHUNK_SIZE = 50;
 const IX_CHUNK_SIZE = 10;
 const FAC_CHUNK_SIZE = 10;
 const NET_CHUNK_SIZE = 40;
-const NETFAC_FETCH_ATTEMPTS = 24;
-const NETIXLAN_FETCH_ATTEMPTS = 16;
+const NETFAC_FETCH_ATTEMPTS = 4;
+const NETIXLAN_FETCH_ATTEMPTS = 3;
 const LARGE_METRO_HINTS = new Set<MetroKey>([
+  "Jakarta",
   "London",
   "Frankfurt",
   "Ashburn",
@@ -320,7 +322,7 @@ const formatChunkFailure = (
 const fetchPeeringDbWithRetry = async <T,>(
   obj: string,
   params: PeeringDbParams = {},
-  maxAttempts = 10,
+  maxAttempts = DEFAULT_FETCH_ATTEMPTS,
   options?: {
     onThrottleWait?: (info: { message: string; waitMs: number; attempt: number }) => void;
   }
@@ -517,12 +519,17 @@ const PeeringDBDashboard: React.FC = () => {
         )
       : 0;
   const showLoadPanel = Boolean(loadProgress || error || allNetError);
-  const activeLargeMetros = selectedMetros.filter((metro) => LARGE_METRO_HINTS.has(metro));
+  const loadProgressContext = `${loadProgress?.detail ?? ""} ${loadProgress?.throttleMessage ?? ""}`;
+  const activeLargeMetros = selectedMetros.filter(
+    (metro) => LARGE_METRO_HINTS.has(metro) && loadProgressContext.includes(metro)
+  );
+  const fallbackLargeMetros = selectedMetros.filter((metro) => LARGE_METRO_HINTS.has(metro));
+  const largeMetroTargets = activeLargeMetros.length > 0 ? activeLargeMetros : fallbackLargeMetros;
   const largeMetroNotice =
-    loadProgress && [2, 3, 4].includes(loadProgress.step) && activeLargeMetros.length > 0
-      ? `${activeLargeMetros.join(", ")} ${
-          activeLargeMetros.length === 1 ? "is" : "are"
-        } larger metro${activeLargeMetros.length === 1 ? "" : "s"}, so facility and origin data can take longer to load.`
+    loadProgress && [2, 3, 4].includes(loadProgress.step) && largeMetroTargets.length > 0
+      ? `${largeMetroTargets.join(", ")} ${
+          largeMetroTargets.length === 1 ? "is" : "are"
+        } larger metro${largeMetroTargets.length === 1 ? "" : "s"}, so facility and origin data can take longer to load.`
       : null;
 
   useEffect(() => {
@@ -813,7 +820,7 @@ const PeeringDBDashboard: React.FC = () => {
 
         try {
           const ixResult = needsIx
-            ? await fetchPeeringDbWithRetry<any>("ix", ixParams, 10, {
+            ? await fetchPeeringDbWithRetry<any>("ix", ixParams, DEFAULT_FETCH_ATTEMPTS, {
                 onThrottleWait: reportThrottleWait(`IX list for ${m}`),
               })
             : { data: ixList || [] };
@@ -821,7 +828,7 @@ const PeeringDBDashboard: React.FC = () => {
             await sleep(REQUEST_GAP_MS);
           }
           const facResult = needsFac
-            ? await fetchPeeringDbWithRetry<any>("fac", facParams, 10, {
+            ? await fetchPeeringDbWithRetry<any>("fac", facParams, DEFAULT_FETCH_ATTEMPTS, {
                 onThrottleWait: reportThrottleWait(`facility list for ${m}`),
               })
             : { data: facList || [] };
