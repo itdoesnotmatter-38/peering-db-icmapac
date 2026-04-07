@@ -237,14 +237,15 @@ const oneDecimalFormatter = new Intl.NumberFormat("en-US", {
   minimumFractionDigits: 0,
 });
 const REQUEST_GAP_MS = 500;
+const NETFAC_REQUEST_GAP_MS = 900;
 const DETAIL_REQUEST_GAP_MS = 1200;
 const DEFAULT_FETCH_ATTEMPTS = 3;
 const DETAIL_FETCH_ATTEMPTS = 5;
 const ORG_CHUNK_SIZE = 50;
 const IX_CHUNK_SIZE = 10;
-const FAC_CHUNK_SIZE = 10;
+const FAC_CHUNK_SIZE = 5;
 const NET_CHUNK_SIZE = 40;
-const NETFAC_FETCH_ATTEMPTS = 4;
+const NETFAC_FETCH_ATTEMPTS = 3;
 const NETIXLAN_FETCH_ATTEMPTS = 3;
 const LARGE_METRO_HINTS = new Set<MetroKey>([
   "Jakarta",
@@ -793,9 +794,54 @@ const PeeringDBDashboard: React.FC = () => {
       }) => {
         updateLoadProgress((prev) => ({
           ...prev,
-          throttleMessage: `PeeringDB asked us to wait ${formatWaitSeconds(waitMs)} before retrying ${context}.`,
-          detail: `Waiting ${formatWaitSeconds(waitMs)} to retry ${context} (retry ${attempt}).`,
+          throttleMessage: `PeeringDB rate-limited ${context}. Retrying in ${formatWaitSeconds(waitMs)} (retry ${attempt}).`,
+          detail: `Waiting ${formatWaitSeconds(waitMs)} to retry ${context}.`,
         }));
+      };
+
+      const fetchNetfacRowsWithAdaptiveChunking = async (
+        metro: MetroKey,
+        facIdsChunk: number[],
+        chunkLabel: string
+      ): Promise<any[]> => {
+        try {
+          const { data } = await fetchPeeringDbWithRetry<any>(
+            "netfac",
+            {
+              fac_id__in: facIdsChunk.join(","),
+              all: 1,
+            },
+            NETFAC_FETCH_ATTEMPTS,
+            {
+              onThrottleWait: reportThrottleWait(`${metro} facility data ${chunkLabel}`),
+            }
+          );
+          return data || [];
+        } catch (err: any) {
+          if (facIdsChunk.length <= 1) {
+            throw err;
+          }
+
+          updateLoadProgress((prev) => ({
+            ...prev,
+            detail: `${metro}: facility data ${chunkLabel} is still being rate-limited. Retrying with smaller requests.`,
+            throttleMessage: null,
+          }));
+
+          const midpoint = Math.ceil(facIdsChunk.length / 2);
+          const leftRows = await fetchNetfacRowsWithAdaptiveChunking(
+            metro,
+            facIdsChunk.slice(0, midpoint),
+            `${chunkLabel}a`
+          );
+          await sleep(NETFAC_REQUEST_GAP_MS);
+          const rightRows = await fetchNetfacRowsWithAdaptiveChunking(
+            metro,
+            facIdsChunk.slice(midpoint),
+            `${chunkLabel}b`
+          );
+          return [...leftRows, ...rightRows];
+        }
       };
 
       const getMetroReadyStatus = (metro: MetroKey): MetroLoadStatus =>
@@ -1113,7 +1159,6 @@ const PeeringDBDashboard: React.FC = () => {
 
           for (let chunkIndex = 0; chunkIndex < facChunks.length; chunkIndex += 1) {
             const ch = facChunks[chunkIndex];
-            const param = ch.join(",");
             const progressCurrent = completedNetfacChunks + 1;
             let rows: any[] = [];
             updateLoadProgress((prev) => ({
@@ -1124,19 +1169,11 @@ const PeeringDBDashboard: React.FC = () => {
               throttleMessage: null,
             }));
             try {
-              ({ data: rows } = await fetchPeeringDbWithRetry<any>(
-                "netfac",
-                {
-                  fac_id__in: param,
-                  all: 1,
-                },
-                NETFAC_FETCH_ATTEMPTS,
-                {
-                  onThrottleWait: reportThrottleWait(
-                    `${metro} netfac chunk ${chunkIndex + 1} of ${facChunks.length}`
-                  ),
-                }
-              ));
+              rows = await fetchNetfacRowsWithAdaptiveChunking(
+                metro,
+                ch,
+                `chunk ${chunkIndex + 1} of ${facChunks.length}`
+              );
             } catch (err: any) {
               throw new Error(
                 formatChunkFailure(
@@ -1151,7 +1188,7 @@ const PeeringDBDashboard: React.FC = () => {
 
             metroRows.push(...rows);
             completedNetfacChunks += 1;
-            await sleep(REQUEST_GAP_MS);
+            await sleep(NETFAC_REQUEST_GAP_MS);
           }
 
           workingNetfacCache[metro] = metroRows;
@@ -4469,7 +4506,7 @@ const PeeringDBDashboard: React.FC = () => {
                 </div>
               )}
 
-              {allNetError && (
+              {allNetError && !loadProgress && (
                 <div
                   style={{
                     color: "#fecaca",

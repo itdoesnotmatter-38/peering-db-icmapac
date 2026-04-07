@@ -15,7 +15,7 @@
 const PEERINGDB_BASE_URL = "https://www.peeringdb.com/api";
 const DEFAULT_LIMIT = 250;
 const MAX_PAGES = 2000;
-const MAX_RETRIES = 12;
+const MAX_RETRIES = 8;
 const BASE_DELAY_MS = 1000;
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
