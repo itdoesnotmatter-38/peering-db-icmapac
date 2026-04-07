@@ -504,6 +504,26 @@ const PeeringDBDashboard: React.FC = () => {
           .map((m) => `${METROS[m].city} (${METROS[m].country})`)
           .join(" + ");
 
+  const activeMetros = React.useMemo(
+    () =>
+      selectedMetros.length === 0
+        ? lastLoadedMetros
+        : selectedMetros.filter((metro) => lastLoadedMetros.includes(metro)),
+    [selectedMetros, lastLoadedMetros]
+  );
+
+  const activeMetroLabel =
+    activeMetros.length === 0
+      ? "None"
+      : activeMetros.map((m) => `${METROS[m].city} (${METROS[m].country})`).join(" + ");
+
+  const hasUnloadedMetroSelection =
+    selectedMetros.length > 0 && selectedMetros.some((metro) => !lastLoadedMetros.includes(metro));
+  const showingSubsetOfCached =
+    activeMetros.length > 0 &&
+    (activeMetros.length !== lastLoadedMetros.length ||
+      activeMetros.some((metro, index) => metro !== lastLoadedMetros[index]));
+
   const loadPercent =
     loadProgress && loadProgress.totalSteps > 0
       ? Math.max(
@@ -580,14 +600,14 @@ const PeeringDBDashboard: React.FC = () => {
     return out;
   }
 
-  // ---- Union IX/FAC for lastLoadedMetros ----
+  // ---- Union IX/FAC for active metros in the current view ----
   useEffect(() => {
     const ixArr: any[] = [];
     const facArr: any[] = [];
     const ixSeen = new Set<number>();
     const facSeen = new Set<number>();
 
-    lastLoadedMetros.forEach((m) => {
+    activeMetros.forEach((m) => {
       const ixList = ixCache[m] || [];
       ixList.forEach((ix) => {
         if (ix && typeof ix.id === "number" && !ixSeen.has(ix.id)) {
@@ -606,7 +626,7 @@ const PeeringDBDashboard: React.FC = () => {
 
     setIxData(ixArr);
     setFacData(facArr);
-  }, [lastLoadedMetros, ixCache, facCache]);
+  }, [activeMetros, ixCache, facCache]);
 
   // Keep IX / FAC selection valid when ixData / facData change.
   useEffect(() => {
@@ -684,25 +704,31 @@ const PeeringDBDashboard: React.FC = () => {
   // Reset sort when metros change.
   useEffect(() => {
     setSortState({ key: "asn", direction: "asc" });
-  }, [lastLoadedMetros]);
+  }, [activeMetros]);
 
   useEffect(() => {
-    if (lastLoadedMetros.length === 0) return;
+    if (activeMetros.length === 0) return;
 
     setGapSourceMetros((prev) => {
-      const valid = prev.filter((metro) => lastLoadedMetros.includes(metro));
+      const valid = prev.filter((metro) => activeMetros.includes(metro));
       if (valid.length > 0) return valid;
-      return [lastLoadedMetros[0]];
+      return [activeMetros[0]];
     });
 
     setGapTargetMetros((prev) => {
-      const valid = prev.filter((metro) => lastLoadedMetros.includes(metro));
-      if (lastLoadedMetros.length <= 1) return [];
+      const valid = prev.filter((metro) => activeMetros.includes(metro));
+      if (activeMetros.length <= 1) return [];
       if (valid.length > 0) return valid;
-      const fallback = lastLoadedMetros.find((metro) => metro !== lastLoadedMetros[0]);
+      const fallback = activeMetros.find((metro) => metro !== activeMetros[0]);
       return fallback ? [fallback] : [];
     });
-  }, [lastLoadedMetros]);
+  }, [activeMetros]);
+
+  useEffect(() => {
+    if (activeMetros.length <= 1 && gapFilterMode === "present_in_source_not_target") {
+      setGapFilterMode("all");
+    }
+  }, [activeMetros.length, gapFilterMode]);
 
   // ---- Load ALL networks for selectedMetros (using cache where possible) ----
   const handleLoadAllNetworks = async () => {
@@ -1418,37 +1444,45 @@ const PeeringDBDashboard: React.FC = () => {
   };
 
   // ---- filters ----
-  const asnFilterSet = (() => {
+  const matrixAsnFilterSet = React.useMemo(() => {
     const raw = asnFilterText
       .split(/[\s,]+/)
       .map((s) => s.trim())
       .filter(Boolean);
     const nums = raw.map((s) => parseInt(s, 10)).filter((n) => !Number.isNaN(n));
     return new Set(nums);
-  })();
+  }, [asnFilterText]);
 
-  const nameTokens = nameFilterText
-    .split(/[\s,]+/)
-    .map((s) => s.trim().toLowerCase())
-    .filter(Boolean);
+  const matrixNameTokens = React.useMemo(
+    () =>
+      nameFilterText
+        .split(/[\s,]+/)
+        .map((s) => s.trim().toLowerCase())
+        .filter(Boolean),
+    [nameFilterText]
+  );
 
-  const filteredNetworks = metroNetworks.filter((net) => {
-    if (!net.asn) return false;
+  const matrixFilteredNetworks = React.useMemo(
+    () =>
+      metroNetworks.filter((net) => {
+        if (!net.asn) return false;
 
-    if (asnFilterSet.size > 0 && !asnFilterSet.has(net.asn)) return false;
+        if (matrixAsnFilterSet.size > 0 && !matrixAsnFilterSet.has(net.asn)) return false;
 
-    if (nameTokens.length > 0) {
-      const label = (net.name ?? "").toLowerCase();
-      const match = nameTokens.some((tok) => label.includes(tok));
-      if (!match) return false;
-    }
+        if (matrixNameTokens.length > 0) {
+          const label = (net.name ?? "").toLowerCase();
+          const match = matrixNameTokens.some((tok) => label.includes(tok));
+          if (!match) return false;
+        }
 
-    return true;
-  });
+        return true;
+      }),
+    [metroNetworks, matrixAsnFilterSet, matrixNameTokens]
+  );
 
   // ---- IX counts and capacity totals (for selected networks) ----
   const ixCounts = new Map<number, number>();
-  filteredNetworks.forEach((net) => {
+  matrixFilteredNetworks.forEach((net) => {
     net.ixCaps.forEach((_cap, ixId) => {
       const prev = ixCounts.get(ixId) ?? 0;
       ixCounts.set(ixId, prev + 1);
@@ -1457,7 +1491,7 @@ const PeeringDBDashboard: React.FC = () => {
 
   const ixSelectedSet = new Set(selectedIxIds);
   const ixCapacityTotals = new Map<number, number>();
-  filteredNetworks.forEach((net) => {
+  matrixFilteredNetworks.forEach((net) => {
     net.ixCaps.forEach((cap, ixId) => {
       if (ixSelectedSet.size > 0 && !ixSelectedSet.has(ixId)) return;
       const prev = ixCapacityTotals.get(ixId) ?? 0;
@@ -1513,7 +1547,7 @@ const PeeringDBDashboard: React.FC = () => {
 
   // ---- facility network counts & org grouping ----
   const facNetworkCounts = new Map<number, number>();
-  filteredNetworks.forEach((net) => {
+  matrixFilteredNetworks.forEach((net) => {
     net.facIds.forEach((fid) => {
       const prev = facNetworkCounts.get(fid) ?? 0;
       facNetworkCounts.set(fid, prev + 1);
@@ -1566,8 +1600,8 @@ const PeeringDBDashboard: React.FC = () => {
   const facColumnsFlat = orgGroups.flatMap((g) => g.facilities.map((f) => f.fac));
 
   // ---- sorting ----
-  const sortedNetworks: MetroNetwork[] = React.useMemo(() => {
-    const arr = [...filteredNetworks];
+  const matrixSortedNetworks: MetroNetwork[] = React.useMemo(() => {
+    const arr = [...matrixFilteredNetworks];
     const dir = sortState.direction === "asc" ? 1 : -1;
 
     arr.sort((a, b) => {
@@ -1606,7 +1640,16 @@ const PeeringDBDashboard: React.FC = () => {
     });
 
     return arr;
-  }, [filteredNetworks, sortState]);
+  }, [matrixFilteredNetworks, sortState]);
+
+  const clearMatrixFilters = () => {
+    setAsnFilterText("");
+    setNameFilterText("");
+    setIxSearch("");
+    setFacSearch("");
+    setSelectedIxIds(ixData.map((ix) => ix.id).filter((id: any) => typeof id === "number"));
+    setSelectedFacIds(facData.map((fac) => fac.id).filter((id: any) => typeof id === "number"));
+  };
 
   const toggleDir = (d: "asc" | "desc") => (d === "asc" ? "desc" : "asc");
 
@@ -1644,7 +1687,7 @@ const PeeringDBDashboard: React.FC = () => {
 
     const rows: CapacityRow[] = [];
 
-    sortedNetworks.forEach((net) => {
+    matrixSortedNetworks.forEach((net) => {
       let totalGbps = 0;
       const segments: CapacitySegment[] = [];
 
@@ -1667,7 +1710,7 @@ const PeeringDBDashboard: React.FC = () => {
     rows.sort((a, b) => b.totalGbps - a.totalGbps);
 
     return { rows, grandTotalGbps, maxTotalGbps };
-  }, [sortedNetworks, ixColumnsSorted]);
+  }, [matrixSortedNetworks, ixColumnsSorted]);
 
   // ---- per-metro compare summaries for loaded data ----
   const metroCompareSummaries = React.useMemo(() => {
@@ -1681,9 +1724,9 @@ const PeeringDBDashboard: React.FC = () => {
       facilityCount: number;
     }[] = [];
 
-    if (metroNetworks.length === 0 || lastLoadedMetros.length === 0) return summaries;
+    if (metroNetworks.length === 0 || activeMetros.length === 0) return summaries;
 
-    lastLoadedMetros.forEach((mKey) => {
+    activeMetros.forEach((mKey) => {
       const metroIxIds = new Set(
         (ixCache[mKey] || [])
           .map((ix) => ix?.id)
@@ -1736,7 +1779,7 @@ const PeeringDBDashboard: React.FC = () => {
     });
 
     return summaries;
-  }, [metroNetworks, lastLoadedMetros, ixCache, facCache]);
+  }, [metroNetworks, activeMetros, ixCache, facCache]);
 
   const metroSummaries = React.useMemo(
     () =>
@@ -1763,7 +1806,7 @@ const PeeringDBDashboard: React.FC = () => {
   );
 
   const metroCapacityStacks = React.useMemo(() => {
-    return lastLoadedMetros.map((metro) => {
+    return activeMetros.map((metro) => {
       const metroIxIds = new Set(
         (ixCache[metro] || [])
           .map((ix) => ix?.id)
@@ -1774,7 +1817,7 @@ const PeeringDBDashboard: React.FC = () => {
         .filter((ix) => metroIxIds.has(ix.id))
         .map((ix) => {
           let capacityGbps = 0;
-          filteredNetworks.forEach((net) => {
+          metroNetworks.forEach((net) => {
             capacityGbps += (net.ixCaps.get(ix.id) ?? 0) / 1000;
           });
           return {
@@ -1789,17 +1832,17 @@ const PeeringDBDashboard: React.FC = () => {
       const totalGbps = ixEntries.reduce((sum, entry) => sum + entry.capacityGbps, 0);
       return { metro, ixEntries, totalGbps };
     });
-  }, [lastLoadedMetros, ixCache, ixColumnsSorted, filteredNetworks]);
+  }, [activeMetros, ixCache, ixColumnsSorted, metroNetworks]);
 
   const rawPresenceGapRows = React.useMemo(() => {
-    if (sortedNetworks.length === 0 || lastLoadedMetros.length === 0) return [] as PresenceGapRow[];
+    if (metroNetworks.length === 0 || activeMetros.length === 0) return [] as PresenceGapRow[];
 
-    const rows = sortedNetworks.map((net) => {
+    const rows = metroNetworks.map((net) => {
       const metroStates = {} as Record<MetroKey, MetroPresenceSummary>;
       let presentMetroCount = 0;
       const metroFootprint: string[] = [];
 
-      lastLoadedMetros.forEach((mKey) => {
+      activeMetros.forEach((mKey) => {
         const metroIxIds = new Set(
           (ixCache[mKey] || [])
             .map((ix) => ix?.id)
@@ -1853,8 +1896,8 @@ const PeeringDBDashboard: React.FC = () => {
     return rows;
 
   }, [
-    sortedNetworks,
-    lastLoadedMetros,
+    metroNetworks,
+    activeMetros,
     ixCache,
     facCache,
   ]);
@@ -1871,9 +1914,9 @@ const PeeringDBDashboard: React.FC = () => {
   const presenceGapRows = React.useMemo(() => {
     const filteredRows = rawPresenceGapRows.filter((row) => {
       if (gapFilterMode === "missing_somewhere") {
-        if (!(row.presentMetroCount > 0 && row.presentMetroCount < lastLoadedMetros.length)) return false;
+        if (!(row.presentMetroCount > 0 && row.presentMetroCount < activeMetros.length)) return false;
       } else if (gapFilterMode === "present_in_all") {
-        if (!(lastLoadedMetros.length > 0 && row.presentMetroCount === lastLoadedMetros.length)) return false;
+        if (!(activeMetros.length > 0 && row.presentMetroCount === activeMetros.length)) return false;
       } else if (gapFilterMode === "only_one_metro") {
         if (row.presentMetroCount !== 1) return false;
       } else if (gapFilterMode === "present_in_source_not_target") {
@@ -1963,9 +2006,58 @@ const PeeringDBDashboard: React.FC = () => {
     gapNetworkTokens,
     gapSortDirection,
     gapSortField,
-    lastLoadedMetros.length,
+    activeMetros.length,
     rawPresenceGapRows,
   ]);
+
+  const filteredPresenceMetroSummaries = React.useMemo(
+    () =>
+      activeMetros.map((metro) => {
+        const matchingRows = presenceGapRows.filter((row) => {
+          const summary = row.metroStates[metro];
+          return Boolean(summary?.ixPresent || summary?.facilityPresent);
+        });
+        return {
+          metro,
+          networkCount: matchingRows.length,
+          capacityGbps: matchingRows.reduce(
+            (sum, row) => sum + (row.metroStates[metro]?.capacityGbps ?? 0),
+            0
+          ),
+          facilityPresenceCount: matchingRows.reduce(
+            (sum, row) => sum + (row.metroStates[metro]?.facilityPresenceCount ?? 0),
+            0
+          ),
+        };
+      }),
+    [activeMetros, presenceGapRows]
+  );
+
+  const filteredPresenceMaxCapacityGbps = React.useMemo(
+    () =>
+      filteredPresenceMetroSummaries.reduce(
+        (max, summary) => Math.max(max, summary.capacityGbps),
+        0
+      ),
+    [filteredPresenceMetroSummaries]
+  );
+
+  const filteredPresenceTopNetworks = React.useMemo(
+    () =>
+      presenceGapRows
+        .map((row) => ({
+          netId: row.net.netId,
+          label: row.net.name || `AS${row.net.asn ?? row.net.netId}`,
+          asn: row.net.asn ?? null,
+          totalCapacityGbps: activeMetros.reduce(
+            (sum, metro) => sum + (row.metroStates[metro]?.capacityGbps ?? 0),
+            0
+          ),
+        }))
+        .sort((a, b) => b.totalCapacityGbps - a.totalCapacityGbps)
+        .slice(0, 5),
+    [activeMetros, presenceGapRows]
+  );
 
   useEffect(() => {
     if (presenceGapRows.length === 0) {
@@ -1993,7 +2085,7 @@ const PeeringDBDashboard: React.FC = () => {
       facilityEntries: Array<{ id: number; name: string; city: string }>;
     }>;
 
-    return lastLoadedMetros.map((metro) => {
+    return activeMetros.map((metro) => {
       const net = selectedGapRow.net;
       const summary = selectedGapRow.metroStates[metro];
       const ixEntries = (ixCache[metro] || [])
@@ -2021,7 +2113,7 @@ const PeeringDBDashboard: React.FC = () => {
         facilityEntries,
       };
     });
-  }, [selectedGapRow, lastLoadedMetros, ixCache, facCache]);
+  }, [selectedGapRow, activeMetros, ixCache, facCache]);
 
   const selectedGapIxLegend = React.useMemo(() => {
     const seen = new Map<number, string>();
@@ -2161,7 +2253,7 @@ const PeeringDBDashboard: React.FC = () => {
     const rows: InsightRecord[] = [];
 
     rawPresenceGapRows.forEach((row) => {
-      lastLoadedMetros.forEach((metro) => {
+      activeMetros.forEach((metro) => {
         const summary = row.metroStates[metro];
         if (!summary || (!summary.ixPresent && !summary.facilityPresent)) return;
         const detail = buildMetroDetailForNetwork(row.net, metro);
@@ -2185,13 +2277,13 @@ const PeeringDBDashboard: React.FC = () => {
     });
 
     return rows;
-  }, [buildMetroDetailForNetwork, lastLoadedMetros, rawPresenceGapRows]);
+  }, [buildMetroDetailForNetwork, activeMetros, rawPresenceGapRows]);
 
   const ixDeploymentInsightRows = React.useMemo<InsightRecord[]>(() => {
     const rows: InsightRecord[] = [];
 
     rawPresenceGapRows.forEach((row) => {
-      lastLoadedMetros.forEach((metro) => {
+      activeMetros.forEach((metro) => {
         const detail = buildMetroDetailForNetwork(row.net, metro);
         detail.ixEntries.forEach((ix) => {
           rows.push({
@@ -2212,13 +2304,13 @@ const PeeringDBDashboard: React.FC = () => {
     });
 
     return rows;
-  }, [buildMetroDetailForNetwork, lastLoadedMetros, rawPresenceGapRows]);
+  }, [buildMetroDetailForNetwork, activeMetros, rawPresenceGapRows]);
 
   const facilityPresenceInsightRows = React.useMemo<InsightRecord[]>(() => {
     const rows: InsightRecord[] = [];
 
     rawPresenceGapRows.forEach((row) => {
-      lastLoadedMetros.forEach((metro) => {
+      activeMetros.forEach((metro) => {
         const facilities = (facCache[metro] || [])
           .filter((fac: any) => typeof fac?.id === "number" && row.net.facIds.has(fac.id))
           .sort((a: any, b: any) => String(a.name || "").localeCompare(String(b.name || "")));
@@ -2249,7 +2341,7 @@ const PeeringDBDashboard: React.FC = () => {
     });
 
     return rows;
-  }, [facCache, lastLoadedMetros, orgLookup, rawPresenceGapRows]);
+  }, [facCache, activeMetros, orgLookup, rawPresenceGapRows]);
 
   const insightDatasets = React.useMemo<Record<InsightsDataset, InsightDatasetDefinition>>(
     () => ({
@@ -3045,10 +3137,606 @@ const PeeringDBDashboard: React.FC = () => {
     URL.revokeObjectURL(url);
   };
 
+  const escapeHtml = (value: string) =>
+    value
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;");
+
+  const buildPdfBarRows = (
+    rows: Array<{ label: string; value: number; detail?: string }>,
+    options?: { color?: string; formatter?: (value: number) => string }
+  ) => {
+    const maxValue = rows.reduce((max, row) => Math.max(max, row.value), 0);
+    const color = options?.color || "#0ea5e9";
+    const formatter = options?.formatter || ((value: number) => formatCount(Math.round(value)));
+
+    return rows
+      .map((row) => {
+        const widthPct = maxValue > 0 ? Math.max((row.value / maxValue) * 100, row.value > 0 ? 4 : 0) : 0;
+        return `
+          <div class="chart-row">
+            <div class="chart-label-wrap">
+              <div class="chart-label">${escapeHtml(row.label)}</div>
+              ${row.detail ? `<div class="muted">${escapeHtml(row.detail)}</div>` : ""}
+            </div>
+            <div class="chart-track">
+              <div class="chart-fill" style="width:${widthPct}%; background:${color};"></div>
+            </div>
+            <div class="chart-value">${escapeHtml(formatter(row.value))}</div>
+          </div>
+        `;
+      })
+      .join("");
+  };
+
+  const buildPdfStackedBarRows = (
+    rows: Array<{
+      label: string;
+      value: number;
+      detail?: string;
+      segments: Array<{ label: string; value: number; color: string }>;
+    }>,
+    options?: { formatter?: (value: number) => string }
+  ) => {
+    const maxValue = rows.reduce((max, row) => Math.max(max, row.value), 0);
+    const formatter = options?.formatter || ((value: number) => formatCount(Math.round(value)));
+
+    return rows
+      .map((row) => {
+        const widthPct = maxValue > 0 ? Math.max((row.value / maxValue) * 100, row.value > 0 ? 4 : 0) : 0;
+        const total = row.segments.reduce((sum, segment) => sum + segment.value, 0);
+        const segmentsHtml =
+          total > 0
+            ? row.segments
+                .filter((segment) => segment.value > 0)
+                .map((segment) => {
+                  const segmentPct = (segment.value / total) * 100;
+                  return `<div class="chart-segment" style="width:${segmentPct}%; background:${segment.color};"></div>`;
+                })
+                .join("")
+            : "";
+        const legendHtml =
+          total > 0
+            ? `<div class="chart-legend">${row.segments
+                .filter((segment) => segment.value > 0)
+                .map((segment) => {
+                  const percent = total > 0 ? (segment.value / total) * 100 : 0;
+                  const percentText = percent >= 10 ? `${Math.round(percent)}%` : `${percent.toFixed(1)}%`;
+                  return `<div class="legend-chip">
+                    <span class="legend-swatch" style="background:${segment.color};"></span>
+                    <span>${escapeHtml(segment.label)}</span>
+                    <strong>${escapeHtml(formatter(segment.value))}</strong>
+                    <span class="muted">(${escapeHtml(percentText)})</span>
+                  </div>`;
+                })
+                .join("")}</div>`
+            : "";
+
+        return `
+          <div class="chart-block">
+            <div class="chart-row">
+              <div class="chart-label-wrap">
+                <div class="chart-label">${escapeHtml(row.label)}</div>
+                ${row.detail ? `<div class="muted">${escapeHtml(row.detail)}</div>` : ""}
+              </div>
+              <div class="chart-track">
+                <div class="chart-stack" style="width:${widthPct}%;">${segmentsHtml}</div>
+              </div>
+              <div class="chart-value">${escapeHtml(formatter(row.value))}</div>
+            </div>
+            ${legendHtml}
+          </div>
+        `;
+      })
+      .join("");
+  };
+
+  const buildPdfShell = (title: string, contentHtml: string) => `
+    <!doctype html>
+    <html>
+      <head>
+        <meta charset="utf-8" />
+        <title>${escapeHtml(title)}</title>
+        <style>
+          @page { size: A4 portrait; margin: 14mm; }
+          * { box-sizing: border-box; }
+          body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+            color: #0f172a;
+            margin: 0;
+            background: #ffffff;
+          }
+          .screen-toolbar {
+            position: sticky;
+            top: 0;
+            z-index: 10;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 12px;
+            padding: 14px 18px;
+            border-bottom: 1px solid #cbd5e1;
+            background: #f8fafc;
+          }
+          .screen-toolbar .hint {
+            font-size: 12px;
+            color: #475569;
+          }
+          .screen-toolbar button {
+            border: 1px solid #0ea5e9;
+            border-radius: 999px;
+            padding: 8px 14px;
+            background: #e0f2fe;
+            color: #0c4a6e;
+            font-weight: 700;
+            cursor: pointer;
+          }
+          .page {
+            display: flex;
+            flex-direction: column;
+            gap: 14px;
+            max-width: 1040px;
+            margin: 0 auto;
+            padding: 18px;
+          }
+          .header { display: flex; justify-content: space-between; gap: 16px; align-items: flex-start; }
+          .title h1 { font-size: 24px; margin: 0 0 4px; }
+          .title .sub { color: #475569; font-size: 12px; }
+          .chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+          .chip {
+            display: inline-flex; align-items: center; border: 1px solid #cbd5e1;
+            border-radius: 999px; padding: 5px 10px; font-size: 12px; color: #0f172a; background: #f8fafc;
+          }
+          .summary-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+          .summary-card {
+            border: 1px solid #cbd5e1; border-radius: 12px; padding: 10px 12px; background: #f8fafc;
+          }
+          .summary-card .label { font-size: 11px; color: #64748b; text-transform: uppercase; margin-bottom: 6px; }
+          .summary-card .value { font-size: 22px; font-weight: 700; }
+          .section {
+            border: 1px solid #cbd5e1; border-radius: 14px; padding: 12px 14px; background: #ffffff;
+          }
+          .section-title { font-size: 13px; text-transform: uppercase; color: #64748b; margin-bottom: 8px; font-weight: 700; }
+          .footprint { font-size: 13px; color: #0f172a; }
+          .metro-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+          .metro-card {
+            border: 1px solid #cbd5e1; border-radius: 12px; padding: 10px 12px; background: #f8fafc;
+            break-inside: avoid;
+          }
+          .metro-card-head { display: flex; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
+          .metro-name { font-size: 18px; font-weight: 700; margin-bottom: 4px; }
+          .metro-status { display: inline-flex; border-radius: 999px; padding: 4px 10px; font-size: 12px; font-weight: 700; }
+          .status-both { background: #dcfce7; color: #166534; }
+          .status-ix-only { background: #dbeafe; color: #1d4ed8; }
+          .status-facility-only { background: #fef3c7; color: #b45309; }
+          .status-absent { background: #e5e7eb; color: #374151; }
+          .metro-kpi { text-align: right; font-size: 12px; color: #0f172a; display: grid; gap: 4px; font-weight: 700; }
+          .metro-block { margin-top: 8px; }
+          .block-title { font-size: 12px; color: #334155; font-weight: 700; margin-bottom: 4px; }
+          .chart-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+          .chart-card { border: 1px solid #cbd5e1; border-radius: 12px; padding: 10px 12px; background: #f8fafc; }
+          .chart-block { margin-bottom: 10px; }
+          .chart-row { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 2fr) auto; gap: 10px; align-items: center; margin-bottom: 8px; }
+          .chart-label-wrap { min-width: 0; }
+          .chart-label { font-size: 12px; font-weight: 700; }
+          .chart-track { height: 12px; border-radius: 999px; background: #e2e8f0; overflow: hidden; }
+          .chart-stack { height: 100%; display: flex; border-radius: 999px; overflow: hidden; }
+          .chart-segment { height: 100%; }
+          .chart-fill { height: 100%; border-radius: 999px; }
+          .chart-value { font-size: 12px; font-weight: 700; white-space: nowrap; }
+          .chart-legend { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+          .legend-chip {
+            display: inline-flex; align-items: center; gap: 6px; border: 1px solid #cbd5e1; border-radius: 999px;
+            padding: 4px 8px; font-size: 11px; background: #ffffff;
+          }
+          .legend-swatch { width: 10px; height: 10px; border-radius: 999px; display: inline-block; }
+          .table { width: 100%; border-collapse: collapse; }
+          .table th, .table td { padding: 8px 10px; border-top: 1px solid #e2e8f0; font-size: 12px; text-align: left; vertical-align: top; }
+          .table th { color: #475569; text-transform: uppercase; font-size: 11px; }
+          ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+          li { display: flex; justify-content: space-between; gap: 10px; font-size: 12px; }
+          .muted { color: #64748b; font-size: 11px; }
+          .footer { font-size: 11px; color: #64748b; text-align: right; }
+          @media print {
+            .screen-toolbar { display: none; }
+            body { background: #ffffff; }
+            .page { padding: 0; }
+          }
+        </style>
+      </head>
+      <body>
+        <div class="screen-toolbar">
+          <div class="hint">Review this one-page summary, then choose Print and save as PDF.</div>
+          <button onclick="window.print()">Print / Save as PDF</button>
+        </div>
+        <div class="page">${contentHtml}</div>
+      </body>
+    </html>
+  `;
+
+  const handleExportSelectedNetworkPdf = () => {
+    if (!selectedGapRow || selectedGapMetroDetails.length === 0) return;
+
+    const generatedAt = new Date();
+    const pdfSegmentPalette = [
+      "#0ea5e9",
+      "#8b5cf6",
+      "#22c55e",
+      "#f59e0b",
+      "#ef4444",
+      "#14b8a6",
+      "#f97316",
+      "#6366f1",
+      "#06b6d4",
+      "#84cc16",
+    ];
+    const pdfIxColorMap = new Map<string, string>();
+    let pdfIxColorIndex = 0;
+    const getPdfIxColor = (ixName: string) => {
+      const existing = pdfIxColorMap.get(ixName);
+      if (existing) return existing;
+      const next = pdfSegmentPalette[pdfIxColorIndex % pdfSegmentPalette.length];
+      pdfIxColorMap.set(ixName, next);
+      pdfIxColorIndex += 1;
+      return next;
+    };
+    const presentMetros = selectedGapMetroDetails.filter(
+      ({ summary }) => Boolean(summary?.ixPresent || summary?.facilityPresent)
+    ).length;
+    const totalCapacityGbps = selectedGapMetroDetails.reduce(
+      (sum, { summary }) => sum + (summary?.capacityGbps ?? 0),
+      0
+    );
+    const totalDcPresences = selectedGapMetroDetails.reduce(
+      (sum, { summary }) => sum + (summary?.facilityPresenceCount ?? 0),
+      0
+    );
+
+    const metroCards = selectedGapMetroDetails
+      .map(({ metro, summary, ixEntries, facilityEntries }) => {
+        const topIx = ixEntries.slice(0, 3);
+        const extraIx = Math.max(ixEntries.length - topIx.length, 0);
+        const topFacilities = facilityEntries.slice(0, 3);
+        const extraFacilities = Math.max(facilityEntries.length - topFacilities.length, 0);
+        const status = presenceStatusLabel(summary);
+
+        return `
+          <div class="metro-card">
+            <div class="metro-card-head">
+              <div>
+                <div class="metro-name">${escapeHtml(metro)}</div>
+                <div class="metro-status status-${status.toLowerCase().replace(/[^a-z]+/g, "-")}">${escapeHtml(status)}</div>
+              </div>
+              <div class="metro-kpi">
+                <div>${escapeHtml(formatCapacity(summary?.capacityGbps ?? 0))}</div>
+                <div>${escapeHtml(`${formatCount(summary?.facilityPresenceCount || 0)} DCs`)}</div>
+              </div>
+            </div>
+            <div class="metro-block">
+              <div class="block-title">IX deployment</div>
+              ${
+                topIx.length === 0
+                  ? `<div class="muted">No IX deployment</div>`
+                  : `<ul>${topIx
+                      .map(
+                        (ix) =>
+                          `<li><span>${escapeHtml(ix.name)}</span><strong>${escapeHtml(
+                            formatCapacity(ix.capacityGbps)
+                          )}</strong></li>`
+                      )
+                      .join("")}</ul>${
+                      extraIx > 0 ? `<div class="muted">+ ${extraIx} more IXs</div>` : ""
+                    }`
+              }
+            </div>
+            <div class="metro-block">
+              <div class="block-title">Facilities / DCs</div>
+              ${
+                topFacilities.length === 0
+                  ? `<div class="muted">No facility presence</div>`
+                  : `<ul>${topFacilities
+                      .map(
+                        (facility) =>
+                          `<li><span>${escapeHtml(facility.name)}</span><span class="muted">${escapeHtml(
+                            facility.city || "Metro facility"
+                          )}</span></li>`
+                      )
+                      .join("")}</ul>${
+                      extraFacilities > 0 ? `<div class="muted">+ ${extraFacilities} more DCs</div>` : ""
+                    }`
+              }
+            </div>
+          </div>
+        `;
+      })
+      .join("");
+
+    const reportHtml = buildPdfShell(
+      `AS${selectedGapRow.net.asn ?? "?"} ${selectedGapRow.net.name ?? "Selected network"} - Metro summary`,
+      `
+        <div class="header">
+          <div class="title">
+            <div class="section-title">Selected Network Summary</div>
+            <h1>${escapeHtml(`AS${selectedGapRow.net.asn ?? "?"} ${selectedGapRow.net.name ?? ""}`)}</h1>
+            <div class="sub">Generated ${escapeHtml(generatedAt.toLocaleString())} from the current live session view</div>
+            <div class="chips">
+              <span class="chip">${escapeHtml(selectedGapRow.net.networkType || "Unknown type")}</span>
+              <span class="chip">Origin: ${escapeHtml(
+                `${selectedGapRow.net.originCity ? `${selectedGapRow.net.originCity}, ` : ""}${
+                  selectedGapRow.net.originCountry || "Unknown"
+                }`
+              )}</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="summary-grid">
+          <div class="summary-card">
+            <div class="label">Selected metros</div>
+            <div class="value">${escapeHtml(formatCount(selectedGapMetroDetails.length))}</div>
+          </div>
+          <div class="summary-card">
+            <div class="label">Metros present</div>
+            <div class="value">${escapeHtml(formatCount(presentMetros))}</div>
+          </div>
+          <div class="summary-card">
+            <div class="label">Total deployed capacity</div>
+            <div class="value">${escapeHtml(formatCapacity(totalCapacityGbps))}</div>
+          </div>
+          <div class="summary-card">
+            <div class="label">Total DC presences</div>
+            <div class="value">${escapeHtml(formatCount(totalDcPresences))}</div>
+          </div>
+        </div>
+
+        <div class="section">
+          <div class="section-title">Footprint</div>
+          <div class="footprint">${
+            selectedGapRow.metroFootprint.length > 0
+              ? escapeHtml(selectedGapRow.metroFootprint.join(" | "))
+              : "Absent in selected metros"
+          }</div>
+        </div>
+
+        <div class="section">
+          <div class="section-title">Charts</div>
+          <div class="chart-grid">
+            <div class="chart-card">
+              <div class="block-title">Deployed capacity by metro</div>
+              ${buildPdfStackedBarRows(
+                selectedGapMetroDetails.map(({ metro, summary, ixEntries }) => ({
+                  label: metro,
+                  value: summary?.capacityGbps ?? 0,
+                  detail: ixEntries.length > 0 ? `${ixEntries.length} IXs in this metro` : "No IX deployment",
+                  segments: ixEntries.map((ix) => ({
+                    label: ix.name,
+                    value: ix.capacityGbps,
+                    color: getPdfIxColor(ix.name),
+                  })),
+                })),
+                { formatter: formatCapacity }
+              )}
+            </div>
+            <div class="chart-card">
+              <div class="block-title">Facility / DC presence by metro</div>
+              ${buildPdfBarRows(
+                selectedGapMetroDetails.map(({ metro, summary, facilityEntries }) => ({
+                  label: metro,
+                  value: summary?.facilityPresenceCount ?? 0,
+                  detail:
+                    facilityEntries.length > 0
+                      ? facilityEntries.slice(0, 4).map((facility) => facility.name).join(" | ")
+                      : "No facility presence",
+                })),
+                {
+                  color: "#f59e0b",
+                  formatter: (value) => `${formatCount(value)} DCs`,
+                }
+              )}
+            </div>
+          </div>
+        </div>
+
+        <div class="section">
+          <div class="section-title">Metro detail</div>
+          <div class="metro-grid">${metroCards}</div>
+        </div>
+
+        <div class="footer">Tip: choose “Save as PDF” in the print dialog to download this one-page summary.</div>
+      `
+    );
+    const printWindow = window.open("", "_blank", "width=980,height=1200");
+    if (!printWindow) return;
+    printWindow.document.open();
+    printWindow.document.write(reportHtml);
+    printWindow.document.close();
+    printWindow.focus();
+  };
+
+  const handleExportFilteredSummaryPdf = () => {
+    if (presenceGapRows.length === 0 || activeMetros.length === 0) return;
+
+    const generatedAt = new Date();
+    const totalCapacityGbps = presenceGapRows.reduce((sum, row) => {
+      return (
+        sum +
+        activeMetros.reduce(
+          (metroSum, metro) => metroSum + (row.metroStates[metro]?.capacityGbps ?? 0),
+          0
+        )
+      );
+    }, 0);
+    const totalDcPresences = presenceGapRows.reduce((sum, row) => {
+      return (
+        sum +
+        activeMetros.reduce(
+          (metroSum, metro) => metroSum + (row.metroStates[metro]?.facilityPresenceCount ?? 0),
+          0
+        )
+      );
+    }, 0);
+    const metroSummaryRows = activeMetros.map((metro) => {
+      const metroRows = presenceGapRows.filter((row) => {
+        const summary = row.metroStates[metro];
+        return Boolean(summary?.ixPresent || summary?.facilityPresent);
+      });
+      const capacityGbps = metroRows.reduce(
+        (sum, row) => sum + (row.metroStates[metro]?.capacityGbps ?? 0),
+        0
+      );
+      const dcPresences = metroRows.reduce(
+        (sum, row) => sum + (row.metroStates[metro]?.facilityPresenceCount ?? 0),
+        0
+      );
+      return {
+        metro,
+        networks: metroRows.length,
+        capacityGbps,
+        dcPresences,
+      };
+    });
+
+    const topNetworkRows = presenceGapRows
+      .slice(0, 8)
+      .map((row) => ({
+        asn: row.net.asn ?? 0,
+        name: row.net.name || `AS${row.net.asn ?? row.net.netId}`,
+        totalCapacityGbps: activeMetros.reduce(
+          (sum, metro) => sum + (row.metroStates[metro]?.capacityGbps ?? 0),
+          0
+        ),
+        footprint: row.metroFootprint.join(" | ") || "Absent everywhere",
+      }));
+
+    const filterChips = [
+      `Mode: ${
+        gapFilterMode === "present_in_source_not_target"
+          ? "Present in one, missing from another"
+          : gapFilterMode === "missing_somewhere"
+            ? "Present in some, missing in others"
+            : gapFilterMode === "only_one_metro"
+              ? "Only in one selected metro"
+              : gapFilterMode === "present_in_all"
+                ? "Shared across all selected metros"
+                : "All loaded networks"
+      }`,
+      gapSourceMetros.length > 0 ? `Present in: ${gapSourceMetros.join(", ")}` : null,
+      gapTargetMetros.length > 0 ? `Missing from: ${gapTargetMetros.join(", ")}` : null,
+      gapNetworkFilterText.trim() ? `Network / ASN filter: ${gapNetworkFilterText.trim()}` : null,
+    ]
+      .filter(Boolean)
+      .map((chip) => `<span class="chip">${escapeHtml(chip as string)}</span>`)
+      .join("");
+
+    const reportHtml = buildPdfShell(
+      `Filtered metro summary - ${activeMetros.join(", ")}`,
+      `
+        <div class="header">
+          <div class="title">
+            <div class="section-title">Filtered Compare Summary</div>
+            <h1>Selected metros: ${escapeHtml(activeMetros.join(", "))}</h1>
+            <div class="sub">Generated ${escapeHtml(generatedAt.toLocaleString())} from the current compare view</div>
+            <div class="chips">${filterChips}</div>
+          </div>
+        </div>
+
+        <div class="summary-grid">
+          <div class="summary-card">
+            <div class="label">Matched networks</div>
+            <div class="value">${escapeHtml(formatCount(presenceGapRows.length))}</div>
+          </div>
+          <div class="summary-card">
+            <div class="label">Metros in scope</div>
+            <div class="value">${escapeHtml(formatCount(activeMetros.length))}</div>
+          </div>
+          <div class="summary-card">
+            <div class="label">Total deployed capacity</div>
+            <div class="value">${escapeHtml(formatCapacity(totalCapacityGbps))}</div>
+          </div>
+          <div class="summary-card">
+            <div class="label">Total DC presences</div>
+            <div class="value">${escapeHtml(formatCount(totalDcPresences))}</div>
+          </div>
+        </div>
+
+        <div class="section">
+          <div class="section-title">Charts</div>
+          <div class="chart-grid">
+            <div class="chart-card">
+              <div class="block-title">Deployed capacity by metro</div>
+              ${buildPdfBarRows(
+                metroSummaryRows.map((row) => ({
+                  label: row.metro,
+                  value: row.capacityGbps,
+                  detail: `${formatCount(row.networks)} networks`,
+                })),
+                { color: "#0ea5e9", formatter: formatCapacity }
+              )}
+            </div>
+            <div class="chart-card">
+              <div class="block-title">DC presences by metro</div>
+              ${buildPdfBarRows(
+                metroSummaryRows.map((row) => ({
+                  label: row.metro,
+                  value: row.dcPresences,
+                  detail: `${formatCount(row.networks)} matched networks`,
+                })),
+                {
+                  color: "#f59e0b",
+                  formatter: (value) => `${formatCount(value)} DCs`,
+                }
+              )}
+            </div>
+          </div>
+        </div>
+
+        <div class="section">
+          <div class="section-title">Top filtered networks</div>
+          <table class="table">
+            <thead>
+              <tr>
+                <th>ASN</th>
+                <th>Network</th>
+                <th>Total capacity</th>
+                <th>Footprint</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${topNetworkRows
+                .map(
+                  (row) => `
+                    <tr>
+                      <td>${escapeHtml(String(row.asn || ""))}</td>
+                      <td>${escapeHtml(row.name)}</td>
+                      <td><strong>${escapeHtml(formatCapacity(row.totalCapacityGbps))}</strong></td>
+                      <td>${escapeHtml(row.footprint)}</td>
+                    </tr>
+                  `
+                )
+                .join("")}
+            </tbody>
+          </table>
+        </div>
+
+        <div class="footer">Tip: choose “Save as PDF” in the print dialog to download this filtered summary.</div>
+      `
+    );
+
+    const printWindow = window.open("", "_blank", "width=980,height=1200");
+    if (!printWindow) return;
+    printWindow.document.open();
+    printWindow.document.write(reportHtml);
+    printWindow.document.close();
+    printWindow.focus();
+  };
+
   const handleDownloadIxCsv = () => {
-    if (sortedNetworks.length === 0 || ixColumnsSorted.length === 0) return;
+    if (matrixSortedNetworks.length === 0 || ixColumnsSorted.length === 0) return;
     const header = ["ASN", "Name", ...ixColumnsSorted.map((ix) => ix.name as string)];
-    const rows = sortedNetworks.map((net) => {
+    const rows = matrixSortedNetworks.map((net) => {
       const asnStr = net.asn != null ? String(net.asn) : "";
       const nameStr = net.name ?? "";
       const cols = ixColumnsSorted.map((ix) => {
@@ -3062,9 +3750,9 @@ const PeeringDBDashboard: React.FC = () => {
   };
 
   const handleDownloadFacCsv = () => {
-    if (sortedNetworks.length === 0 || facColumnsFlat.length === 0) return;
+    if (matrixSortedNetworks.length === 0 || facColumnsFlat.length === 0) return;
     const header = ["ASN", "Name", ...facColumnsFlat.map((fac) => fac.name as string)];
-    const rows = sortedNetworks.map((net) => {
+    const rows = matrixSortedNetworks.map((net) => {
       const asnStr = net.asn != null ? String(net.asn) : "";
       const nameStr = net.name ?? "";
       const cols = facColumnsFlat.map((fac) => (net.facIds.has(fac.id) ? "1" : ""));
@@ -3074,14 +3762,14 @@ const PeeringDBDashboard: React.FC = () => {
   };
 
   const handleDownloadPresenceCsv = () => {
-    if (presenceGapRows.length === 0 || lastLoadedMetros.length === 0) return;
+    if (presenceGapRows.length === 0 || activeMetros.length === 0) return;
 
     const header = [
       "ASN",
       "Name",
       "Present metro count",
       "Metro footprint",
-      ...lastLoadedMetros.flatMap((metro) => [
+      ...activeMetros.flatMap((metro) => [
         `${metro} status`,
         `${metro} capacity_gbps`,
         `${metro} facility_presence_count`,
@@ -3093,7 +3781,7 @@ const PeeringDBDashboard: React.FC = () => {
       row.net.name ?? "",
       String(row.presentMetroCount),
       row.metroFootprint.join(" | "),
-      ...lastLoadedMetros.flatMap((metro) => {
+      ...activeMetros.flatMap((metro) => {
         const summary = row.metroStates[metro];
         return [
           presenceStatusLabel(summary),
@@ -3365,7 +4053,8 @@ const PeeringDBDashboard: React.FC = () => {
     mode: GapFilterMode,
     options?: { source?: MetroKey[]; target?: MetroKey[] }
   ) => {
-    const loaded = lastLoadedMetros.length > 0 ? lastLoadedMetros : selectedMetros;
+    const loaded =
+      activeMetros.length > 0 ? activeMetros : lastLoadedMetros.length > 0 ? lastLoadedMetros : selectedMetros;
     const fallbackSource = loaded.slice(0, 1);
     const fallbackTarget = loaded.slice(1, 2);
 
@@ -3694,9 +4383,15 @@ const PeeringDBDashboard: React.FC = () => {
                   <strong style={{ color: theme.textPrimary }}>AMER</strong> to begin.
                 </>
               )}
+              {activeMetros.length > 0 && (selectedMetros.length > 0 || showingSubsetOfCached) && (
+                <>
+                  {" · "}Showing now: <strong style={{ color: theme.textPrimary }}>{activeMetroLabel}</strong>
+                </>
+              )}
               {lastLoadedMetros.length > 0 && (
                 <>
-                  {" · "}Loaded: <strong style={{ color: theme.textPrimary }}>{loadedMetroLabel}</strong>
+                  {" · "}Cached in session:{" "}
+                  <strong style={{ color: theme.textPrimary }}>{loadedMetroLabel}</strong>
                 </>
               )}
               {lastLoadedAt && (
@@ -3706,6 +4401,13 @@ const PeeringDBDashboard: React.FC = () => {
                 </>
               )}
             </div>
+
+            {hasUnloadedMetroSelection && (
+              <div style={{ fontSize: 12, color: theme.textMuted }}>
+                Some selected metros are not loaded yet. The current view only reflects metros already
+                cached in this session.
+              </div>
+            )}
 
             {selectedMetros.length > 0 && (
               <div
@@ -4016,7 +4718,7 @@ const PeeringDBDashboard: React.FC = () => {
             </div>
           </div>
 
-          {metroNetworks.length > 0 && (
+          {activeView === "matrices" && metroNetworks.length > 0 && (
             <div
               style={{
                 marginBottom: 12,
@@ -4029,9 +4731,73 @@ const PeeringDBDashboard: React.FC = () => {
             >
               {/* Network filters */}
               <div style={{ fontSize: 11, color: theme.textMuted, marginBottom: 8, fontWeight: 700, textTransform: "uppercase" }}>
-                Matrix filters
+                Matrix-only filters
               </div>
-              <div style={{ marginBottom: 8, fontWeight: 700, fontSize: 14 }}>Filter the current matrix view</div>
+              <div
+                style={{
+                  marginBottom: 8,
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  gap: 8,
+                }}
+              >
+                <div style={{ fontWeight: 700, fontSize: 14 }}>Filter the current matrix view</div>
+                <button
+                  type="button"
+                  onClick={clearMatrixFilters}
+                  style={{
+                    border: `1px solid ${theme.cardBorder}`,
+                    borderRadius: 9999,
+                    padding: "6px 10px",
+                    background: "#0f172a",
+                    color: theme.textSoft,
+                    cursor: "pointer",
+                    fontSize: 12,
+                  }}
+                >
+                  Clear
+                </button>
+              </div>
+              <div style={{ fontSize: 12, color: theme.textMuted, marginBottom: 8 }}>
+                These filters only affect <strong style={{ color: theme.textPrimary }}>Matrix view</strong>.
+              </div>
+              {(asnFilterText.trim() || nameFilterText.trim()) && (
+                <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 8 }}>
+                  {asnFilterText.trim() && (
+                    <span
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        borderRadius: 9999,
+                        padding: "4px 9px",
+                        background: "#0f172a",
+                        border: `1px solid ${theme.cardBorder}`,
+                        color: theme.textSoft,
+                        fontSize: 12,
+                      }}
+                    >
+                      ASN: {asnFilterText.trim()}
+                    </span>
+                  )}
+                  {nameFilterText.trim() && (
+                    <span
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        borderRadius: 9999,
+                        padding: "4px 9px",
+                        background: "#0f172a",
+                        border: `1px solid ${theme.cardBorder}`,
+                        color: theme.textSoft,
+                        fontSize: 12,
+                      }}
+                    >
+                      Network: {nameFilterText.trim()}
+                    </span>
+                  )}
+                </div>
+              )}
               <div style={{ marginBottom: 4 }}>Filter by ASN (multi):</div>
               <input
                 style={{
@@ -4086,7 +4852,7 @@ const PeeringDBDashboard: React.FC = () => {
                 }}
               />
               <div style={{ fontSize: 12, color: theme.textMuted, marginBottom: 12 }}>
-                Networks (filtered): {sortedNetworks.length} / {metroNetworks.length}
+                Networks (filtered): {matrixSortedNetworks.length} / {metroNetworks.length}
               </div>
 
               {/* IX filter */}
@@ -4336,7 +5102,7 @@ const PeeringDBDashboard: React.FC = () => {
             </div>
           )}
 
-          {activeView === "insights" && lastLoadedMetros.length > 0 && (
+          {activeView === "insights" && activeMetros.length > 0 && (
             <>
               <div
                 style={{
@@ -5444,42 +6210,28 @@ const PeeringDBDashboard: React.FC = () => {
                       Compare the currently loaded metros and focus on who is present, missing, unique, or shared.
                     </div>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => setShowCompareControls((prev) => !prev)}
-                    style={{
-                      fontSize: 12,
-                      padding: "9px 12px",
-                      borderRadius: 9999,
-                      border: `1px solid ${theme.cardBorder}`,
-                      background: theme.pillBg,
-                      color: theme.textSoft,
-                      cursor: "pointer",
-                      fontWeight: 700,
-                    }}
-                  >
-                    {showCompareControls ? "Hide compare setup" : "Show compare setup"}
-                  </button>
                 </div>
 
                 <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: showCompareControls ? 12 : 10 }}>
                   <span style={{ ...metricChipStyle("capacity"), background: "#0f172a", borderColor: theme.gridBorder }}>
-                    {gapFilterMode === "present_in_source_not_target"
-                      ? "Present in one, missing from another"
-                      : gapFilterMode === "missing_somewhere"
-                        ? "Present in some, missing in others"
-                        : gapFilterMode === "only_one_metro"
-                          ? "Only in one selected metro"
-                          : gapFilterMode === "present_in_all"
-                            ? "Shared across all selected metros"
-                            : "All loaded networks"}
+                    {activeMetros.length === 1
+                      ? `Single metro: ${activeMetros[0]}`
+                      : gapFilterMode === "present_in_source_not_target"
+                        ? "Present in one, missing from another"
+                        : gapFilterMode === "missing_somewhere"
+                          ? "Present in some, missing in others"
+                          : gapFilterMode === "only_one_metro"
+                            ? "Only in one selected metro"
+                            : gapFilterMode === "present_in_all"
+                              ? "Shared across all selected metros"
+                              : "All loaded networks"}
                   </span>
-                  {gapSourceMetros.length > 0 && (
+                  {activeMetros.length > 1 && gapSourceMetros.length > 0 && (
                     <span style={{ ...metricChipStyle("facility"), background: "#0f172a", borderColor: theme.gridBorder }}>
                       Present in: {gapSourceMetros.join(", ")}
                     </span>
                   )}
-                  {gapTargetMetros.length > 0 && (
+                  {activeMetros.length > 1 && gapTargetMetros.length > 0 && (
                     <span style={{ ...metricChipStyle("facility"), background: "#0f172a", borderColor: theme.gridBorder }}>
                       Missing from: {gapTargetMetros.join(", ")}
                     </span>
@@ -5489,7 +6241,103 @@ const PeeringDBDashboard: React.FC = () => {
                   </span>
                 </div>
 
-                {showCompareControls && (
+                {activeMetros.length === 1 ? (
+                  <div
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                      gap: 12,
+                      flexWrap: "wrap",
+                      marginBottom: 12,
+                      padding: 12,
+                      borderRadius: 12,
+                      border: `1px solid ${theme.gridBorder}`,
+                      background: "rgba(15, 23, 42, 0.72)",
+                    }}
+                  >
+                    <div style={{ flex: "1 1 320px" }}>
+                      <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 4 }}>
+                        Showing networks in {activeMetros[0]}
+                      </div>
+                      <div style={{ fontSize: 12, color: theme.textMuted, lineHeight: 1.5 }}>
+                        This view is now acting like a filtered one-metro explorer. Use Matrix view or Insights builder
+                        if you want a cleaner single-metro workflow.
+                      </div>
+                    </div>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                      <button
+                        type="button"
+                        onClick={() => setGapFilterMode("all")}
+                        style={{
+                          fontSize: 12,
+                          padding: "8px 12px",
+                          borderRadius: 9999,
+                          border: `1px solid ${theme.cardBorder}`,
+                          background: "#082f49",
+                          color: "#e0f2fe",
+                          cursor: "pointer",
+                          fontWeight: 700,
+                        }}
+                      >
+                        Show all networks
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setActiveView("matrices")}
+                        style={{
+                          fontSize: 12,
+                          padding: "8px 12px",
+                          borderRadius: 9999,
+                          border: `1px solid ${theme.cardBorder}`,
+                          background: theme.pillBg,
+                          color: theme.textSoft,
+                          cursor: "pointer",
+                          fontWeight: 700,
+                        }}
+                      >
+                        Open matrix view
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setActiveView("insights")}
+                        style={{
+                          fontSize: 12,
+                          padding: "8px 12px",
+                          borderRadius: 9999,
+                          border: `1px solid ${theme.cardBorder}`,
+                          background: theme.pillBg,
+                          color: theme.textSoft,
+                          cursor: "pointer",
+                          fontWeight: 700,
+                        }}
+                      >
+                        Open insights builder
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div style={{ marginBottom: 12 }}>
+                    <button
+                      type="button"
+                      onClick={() => setShowCompareControls((prev) => !prev)}
+                      style={{
+                        fontSize: 12,
+                        padding: "9px 12px",
+                        borderRadius: 9999,
+                        border: `1px solid ${theme.cardBorder}`,
+                        background: theme.pillBg,
+                        color: theme.textSoft,
+                        cursor: "pointer",
+                        fontWeight: 700,
+                      }}
+                    >
+                      {showCompareControls ? "Hide compare setup" : "Show compare setup"}
+                    </button>
+                  </div>
+                )}
+
+                {showCompareControls && activeMetros.length > 1 && (
                   <>
                     <div
                       style={{
@@ -5582,13 +6430,13 @@ const PeeringDBDashboard: React.FC = () => {
                     </select>
                   </label>
 
-                  {lastLoadedMetros.length > 0 && (
+                  {activeMetros.length > 0 && (
                     <div style={{ minWidth: 280, flex: "1 1 320px" }}>
                       <div style={{ fontSize: 12, color: theme.textMuted, marginBottom: 6 }}>
                         Present in
                       </div>
                       <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                        {lastLoadedMetros.map((metro) => (
+                        {activeMetros.map((metro) => (
                           <label
                             key={`gap-source-${metro}`}
                             style={{
@@ -5615,13 +6463,13 @@ const PeeringDBDashboard: React.FC = () => {
                     </div>
                   )}
 
-                  {lastLoadedMetros.length > 1 && (
+                  {activeMetros.length > 1 && (
                     <div style={{ minWidth: 280, flex: "1 1 320px", opacity: gapFilterMode === "present_in_source_not_target" ? 1 : 0.65 }}>
                       <div style={{ fontSize: 12, color: theme.textMuted, marginBottom: 6 }}>
                         Compare against
                       </div>
                       <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                        {lastLoadedMetros
+                        {activeMetros
                           .filter((metro) => !gapSourceMetros.includes(metro))
                           .map((metro) => (
                             <label
@@ -5656,7 +6504,20 @@ const PeeringDBDashboard: React.FC = () => {
                     </div>
                   )}
 
-                  <label style={{ minWidth: 240 }}>
+                    </div>
+                  </>
+                )}
+
+                <div
+                  style={{
+                    display: "flex",
+                    gap: 10,
+                    flexWrap: "wrap",
+                    alignItems: "flex-end",
+                    marginBottom: 12,
+                  }}
+                >
+                  <label style={{ minWidth: 260, flex: "1 1 300px" }}>
                     <div style={{ fontSize: 12, color: theme.textMuted, marginBottom: 4 }}>
                       Filter networks
                     </div>
@@ -5678,7 +6539,7 @@ const PeeringDBDashboard: React.FC = () => {
                     </div>
                   </label>
 
-                  <label style={{ minWidth: 180 }}>
+                  <label style={{ minWidth: 220 }}>
                     <div style={{ fontSize: 12, color: theme.textMuted, marginBottom: 4 }}>
                       Sort by
                     </div>
@@ -5694,8 +6555,16 @@ const PeeringDBDashboard: React.FC = () => {
                         borderRadius: 8,
                       }}
                     >
-                      <option value="source_capacity">Capacity across selected “Present in” metros</option>
-                      <option value="source_facility_presence">Facility presences across selected “Present in” metros</option>
+                      <option value="source_capacity">
+                        {activeMetros.length > 1
+                          ? "Capacity across selected “Present in” metros"
+                          : "Capacity in the active metro"}
+                      </option>
+                      <option value="source_facility_presence">
+                        {activeMetros.length > 1
+                          ? "Facility presences across selected “Present in” metros"
+                          : "Facility presences in the active metro"}
+                      </option>
                       <option value="present_count">Number of selected metros present</option>
                       <option value="asn">ASN</option>
                       <option value="name">Network name</option>
@@ -5740,9 +6609,25 @@ const PeeringDBDashboard: React.FC = () => {
                   >
                     Download presence CSV
                   </button>
-                    </div>
-                  </>
-                )}
+                  <button
+                    type="button"
+                    onClick={handleExportFilteredSummaryPdf}
+                    style={{
+                      fontSize: 12,
+                      padding: "9px 12px",
+                      borderRadius: 9999,
+                      border: `1px solid ${theme.cardBorder}`,
+                      background: "#082f49",
+                      color: "#e0f2fe",
+                      cursor: presenceGapRows.length > 0 ? "pointer" : "not-allowed",
+                      opacity: presenceGapRows.length > 0 ? 1 : 0.5,
+                      fontWeight: 700,
+                    }}
+                    disabled={presenceGapRows.length === 0}
+                  >
+                    Export filtered summary PDF
+                  </button>
+                </div>
 
                 <div style={{ fontSize: 12, color: theme.textMuted, marginBottom: 10 }}>
                   Showing <strong style={{ color: theme.textPrimary }}>{formatCount(presenceGapRows.length)}</strong>{" "}
@@ -5751,6 +6636,144 @@ const PeeringDBDashboard: React.FC = () => {
                 <div style={{ fontSize: 12, color: theme.textMuted, marginBottom: 10 }}>
                   Tip: click any network row to open a metro-by-metro deep dive.
                 </div>
+
+                {presenceGapRows.length > 1 && (
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
+                      gap: 12,
+                      marginBottom: 14,
+                    }}
+                  >
+                    <div
+                      style={{
+                        padding: 12,
+                        borderRadius: 10,
+                        border: `1px solid ${theme.cardBorder}`,
+                        background: theme.cardBgElevated,
+                      }}
+                    >
+                      <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 8, color: theme.capacityAccentSoft }}>
+                        Filtered set overview
+                      </div>
+                      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 8 }}>
+                        <div>
+                          <div style={{ fontSize: 11, color: theme.textMuted }}>Networks</div>
+                          <div style={{ fontSize: 22, fontWeight: 800 }}>{formatCount(presenceGapRows.length)}</div>
+                        </div>
+                        <div>
+                          <div style={{ fontSize: 11, color: theme.textMuted }}>Capacity</div>
+                          <div style={{ fontSize: 22, fontWeight: 800 }}>
+                            {formatCapacity(
+                              filteredPresenceMetroSummaries.reduce(
+                                (sum, summary) => sum + summary.capacityGbps,
+                                0
+                              )
+                            )}
+                          </div>
+                        </div>
+                        <div>
+                          <div style={{ fontSize: 11, color: theme.textMuted }}>DC presences</div>
+                          <div style={{ fontSize: 22, fontWeight: 800 }}>
+                            {formatCount(
+                              filteredPresenceMetroSummaries.reduce(
+                                (sum, summary) => sum + summary.facilityPresenceCount,
+                                0
+                              )
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div
+                      style={{
+                        padding: 12,
+                        borderRadius: 10,
+                        border: `1px solid ${theme.cardBorder}`,
+                        background: theme.cardBgElevated,
+                      }}
+                    >
+                      <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 8, color: theme.capacityAccentSoft }}>
+                        Capacity by metro for the filtered set
+                      </div>
+                      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                        {filteredPresenceMetroSummaries.map((summary) => (
+                          <div key={`filtered-metro-summary-${summary.metro}`}>
+                            <div
+                              style={{
+                                display: "flex",
+                                justifyContent: "space-between",
+                                gap: 8,
+                                fontSize: 12,
+                                marginBottom: 4,
+                              }}
+                            >
+                              <span style={{ fontWeight: 700 }}>{summary.metro}</span>
+                              <span style={{ color: theme.textMuted }}>
+                                {formatCapacity(summary.capacityGbps)} · {formatCount(summary.networkCount)} nets
+                              </span>
+                            </div>
+                            <div
+                              style={{
+                                height: 12,
+                                borderRadius: 9999,
+                                background: "#0b1220",
+                                overflow: "hidden",
+                              }}
+                            >
+                              <div
+                                style={{
+                                  width: `${
+                                    filteredPresenceMaxCapacityGbps > 0
+                                      ? (summary.capacityGbps / filteredPresenceMaxCapacityGbps) * 100
+                                      : 0
+                                  }%`,
+                                  height: "100%",
+                                  borderRadius: 9999,
+                                  background: "linear-gradient(90deg, #0ea5e9, #38bdf8)",
+                                }}
+                              />
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div
+                      style={{
+                        padding: 12,
+                        borderRadius: 10,
+                        border: `1px solid ${theme.cardBorder}`,
+                        background: theme.cardBgElevated,
+                      }}
+                    >
+                      <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 8, color: theme.capacityAccentSoft }}>
+                        Top filtered networks by total capacity
+                      </div>
+                      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                        {filteredPresenceTopNetworks.map((network) => (
+                          <div
+                            key={`filtered-top-network-${network.netId}`}
+                            style={{
+                              display: "flex",
+                              justifyContent: "space-between",
+                              gap: 10,
+                              fontSize: 12,
+                            }}
+                          >
+                            <span style={{ color: theme.textSecondary }}>
+                              {network.label}
+                              {network.asn ? ` (AS${network.asn})` : ""}
+                            </span>
+                            <strong>{formatCapacity(network.totalCapacityGbps)}</strong>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                )}
 
                 {presenceGapRows.length === 0 ? (
                   <div
@@ -5777,7 +6800,7 @@ const PeeringDBDashboard: React.FC = () => {
                     <table
                       style={{
                         width: "100%",
-                        minWidth: 280 + lastLoadedMetros.length * 190,
+                        minWidth: 280 + activeMetros.length * 190,
                         borderCollapse: "collapse",
                         fontSize: 13,
                       }}
@@ -5786,7 +6809,7 @@ const PeeringDBDashboard: React.FC = () => {
                         <tr>
                           <th style={{ ...headerCellBase, textAlign: "left", minWidth: 80 }}>ASN</th>
                           <th style={{ ...headerCellBase, textAlign: "left", minWidth: 220 }}>Network</th>
-                          {lastLoadedMetros.map((metro) => (
+                          {activeMetros.map((metro) => (
                             <th
                               key={`gap-head-${metro}`}
                               style={{ ...headerCellBase, textAlign: "left", minWidth: 190 }}
@@ -5832,7 +6855,7 @@ const PeeringDBDashboard: React.FC = () => {
                             >
                               {row.net.name ?? ""}
                             </td>
-                            {lastLoadedMetros.map((metro) => {
+                            {activeMetros.map((metro) => {
                               const summary = row.metroStates[metro];
                               const label = presenceStatusLabel(summary);
                               const tone = presenceTone(summary);
@@ -5950,7 +6973,7 @@ const PeeringDBDashboard: React.FC = () => {
                     >
                       <div>
                         <div style={{ fontSize: 11, color: theme.textMuted, textTransform: "uppercase" }}>
-                          Network deep dive
+                          Selected network deep dive
                         </div>
                         <h4 style={{ margin: "2px 0 8px", fontSize: 20 }}>
                           AS{selectedGapRow.net.asn ?? "?"} {selectedGapRow.net.name ?? ""}
@@ -5970,22 +6993,44 @@ const PeeringDBDashboard: React.FC = () => {
                             {selectedGapRow.net.originCountry || "Unknown"}
                           </span>
                         </div>
+                        <div style={{ fontSize: 12, color: theme.textMuted, marginTop: 8 }}>
+                          This section reflects the currently selected row only. Use “Export filtered summary PDF” for
+                          the whole filtered set.
+                        </div>
                       </div>
-                      <button
-                        type="button"
-                        onClick={() => setSelectedGapNetId(null)}
-                        style={{
-                          fontSize: 12,
-                          padding: "8px 12px",
-                          borderRadius: 9999,
-                          border: `1px solid ${theme.cardBorder}`,
-                          background: theme.pillBg,
-                          color: theme.textSoft,
-                          cursor: "pointer",
-                        }}
-                      >
-                        Close
-                      </button>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                        <button
+                          type="button"
+                          onClick={handleExportSelectedNetworkPdf}
+                          style={{
+                            fontSize: 12,
+                            padding: "8px 12px",
+                            borderRadius: 9999,
+                            border: "1px solid #38bdf8",
+                            background: "#082f49",
+                            color: "#e0f2fe",
+                            cursor: "pointer",
+                            fontWeight: 700,
+                          }}
+                        >
+                          Export one-page PDF
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setSelectedGapNetId(null)}
+                          style={{
+                            fontSize: 12,
+                            padding: "8px 12px",
+                            borderRadius: 9999,
+                            border: `1px solid ${theme.cardBorder}`,
+                            background: theme.pillBg,
+                            color: theme.textSoft,
+                            cursor: "pointer",
+                          }}
+                        >
+                          Close
+                        </button>
+                      </div>
                     </div>
 
                     <div
@@ -6478,7 +7523,7 @@ const PeeringDBDashboard: React.FC = () => {
           )}
 
           {/* SECTION 1 – ASN × IX matrix */}
-          {activeView === "matrices" && sortedNetworks.length > 0 && ixColumnsSorted.length > 0 && (
+          {activeView === "matrices" && matrixSortedNetworks.length > 0 && ixColumnsSorted.length > 0 && (
             <div
               style={{
                 padding: 14,
@@ -6595,7 +7640,7 @@ const PeeringDBDashboard: React.FC = () => {
                     </tr>
                   </thead>
                   <tbody>
-                    {sortedNetworks.map((net, rowIndex) => (
+                    {matrixSortedNetworks.map((net, rowIndex) => (
                       <tr
                         key={net.netId}
                         style={{
@@ -6790,7 +7835,7 @@ const PeeringDBDashboard: React.FC = () => {
           )}
 
           {/* SECTION 3 – facility matrix */}
-          {activeView === "matrices" && sortedNetworks.length > 0 && facColumnsFlat.length > 0 && (
+          {activeView === "matrices" && matrixSortedNetworks.length > 0 && facColumnsFlat.length > 0 && (
             <div
               style={{
                 padding: 14,
@@ -6920,7 +7965,7 @@ const PeeringDBDashboard: React.FC = () => {
                     </tr>
                   </thead>
                   <tbody>
-                    {sortedNetworks.map((net, rowIndex) => (
+                    {matrixSortedNetworks.map((net, rowIndex) => (
                       <tr
                         key={net.netId}
                         style={{
