@@ -355,12 +355,14 @@ const DEFAULT_NAME_COL_WIDTH = 220;
 const DATA_COL_MIN_WIDTH = 90;
 const BASE_TABLE_MIN_WIDTH = 600;
 
-type SortKey = "asn" | "name" | "ix";
+type SortKey = "asn" | "name" | "ix" | "facility" | "facility_org";
 
 interface SortState {
   key: SortKey;
   direction: "asc" | "desc";
   ixId?: number;
+  facId?: number;
+  orgName?: string;
 }
 
 const HoverCard: React.FC<{
@@ -1671,13 +1673,38 @@ const PeeringDBDashboard: React.FC = () => {
         return (aCap - bCap) * dir;
       }
 
+      if (sortState.key === "facility" && sortState.facId != null) {
+        const facId = sortState.facId;
+        const aPresent = a.facIds.has(facId) ? 1 : 0;
+        const bPresent = b.facIds.has(facId) ? 1 : 0;
+        if (aPresent === bPresent) {
+          const aAsn = a.asn ?? Number.MAX_SAFE_INTEGER;
+          const bAsn = b.asn ?? Number.MAX_SAFE_INTEGER;
+          return (aAsn - bAsn) * dir;
+        }
+        return (aPresent - bPresent) * dir;
+      }
+
+      if (sortState.key === "facility_org" && sortState.orgName) {
+        const facilityIds =
+          orgGroups.find((group) => group.org === sortState.orgName)?.facilities.map((item) => item.fac.id) || [];
+        const aCount = facilityIds.reduce((sum, facId) => sum + (a.facIds.has(facId) ? 1 : 0), 0);
+        const bCount = facilityIds.reduce((sum, facId) => sum + (b.facIds.has(facId) ? 1 : 0), 0);
+        if (aCount === bCount) {
+          const aAsn = a.asn ?? Number.MAX_SAFE_INTEGER;
+          const bAsn = b.asn ?? Number.MAX_SAFE_INTEGER;
+          return (aAsn - bAsn) * dir;
+        }
+        return (aCount - bCount) * dir;
+      }
+
       const aAsn = a.asn ?? Number.MAX_SAFE_INTEGER;
       const bAsn = b.asn ?? Number.MAX_SAFE_INTEGER;
       return (aAsn - bAsn) * dir;
     });
 
     return arr;
-  }, [matrixFilteredNetworks, sortState]);
+  }, [matrixFilteredNetworks, orgGroups, sortState]);
 
   const clearMatrixFilters = () => {
     setAsnFilterText("");
@@ -1710,9 +1737,30 @@ const PeeringDBDashboard: React.FC = () => {
     );
   };
 
-  const sortIndicator = (key: SortKey, ixId?: number) => {
+  const sortByFacility = (facId: number) => {
+    setSortState((prev) =>
+      prev.key === "facility" && prev.facId === facId
+        ? { key: "facility", facId, direction: toggleDir(prev.direction) }
+        : { key: "facility", facId, direction: "desc" }
+    );
+  };
+
+  const sortByFacilityOrg = (orgName: string) => {
+    setSortState((prev) =>
+      prev.key === "facility_org" && prev.orgName === orgName
+        ? { key: "facility_org", orgName, direction: toggleDir(prev.direction) }
+        : { key: "facility_org", orgName, direction: "desc" }
+    );
+  };
+
+  const sortIndicator = (
+    key: SortKey,
+    options?: { ixId?: number; facId?: number; orgName?: string }
+  ) => {
     if (sortState.key !== key) return "";
-    if (key === "ix" && sortState.ixId !== ixId) return "";
+    if (key === "ix" && sortState.ixId !== options?.ixId) return "";
+    if (key === "facility" && sortState.facId !== options?.facId) return "";
+    if (key === "facility_org" && sortState.orgName !== options?.orgName) return "";
     return sortState.direction === "asc" ? " ▲" : " ▼";
   };
 
@@ -7665,7 +7713,7 @@ const PeeringDBDashboard: React.FC = () => {
                           >
                             <div>
                               {ix.name}
-                              {sortIndicator("ix", ix.id)}
+                              {sortIndicator("ix", { ixId: ix.id })}
                             </div>
                             <div style={{ fontSize: 11, color: theme.textSecondary }}>
                               {formatCount(count)} nets
@@ -7966,10 +8014,16 @@ const PeeringDBDashboard: React.FC = () => {
                           style={{
                             ...headerCellBase,
                             textAlign: "center",
+                            cursor: "pointer",
                           }}
                           colSpan={g.facilities.length || 1}
+                          onClick={() => sortByFacilityOrg(g.org)}
+                          title={`Sort by presences across ${g.org} facilities`}
                         >
-                          <div>{g.org}</div>
+                          <div>
+                            {g.org}
+                            {sortIndicator("facility_org", { orgName: g.org })}
+                          </div>
                           <div style={{ fontSize: 11, color: theme.textSecondary }}>
                             {formatCount(g.totalNetworks)} nets
                           </div>
@@ -7989,9 +8043,15 @@ const PeeringDBDashboard: React.FC = () => {
                                 top: 30,
                                 textAlign: "center",
                                 minWidth: DATA_COL_MIN_WIDTH,
+                                cursor: "pointer",
                               }}
+                              onClick={() => sortByFacility(facId)}
+                              title={`Sort by presence in ${f.fac.name}`}
                             >
-                              <div>{f.fac.name}</div>
+                              <div>
+                                {f.fac.name}
+                                {sortIndicator("facility", { facId })}
+                              </div>
                               <div style={{ fontSize: 11, color: theme.textSecondary }}>
                                 {formatCount(facCount)} nets
                               </div>
