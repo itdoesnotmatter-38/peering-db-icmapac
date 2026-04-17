@@ -60,8 +60,6 @@ const uniqueSorted = (values) =>
   Array.from(new Set(values.map((value) => normalizeText(value)).filter(Boolean))).sort((a, b) =>
     a.localeCompare(b)
   );
-const marketKeyFor = (country, city) => `${normalizeText(country).toUpperCase()}::${normalizeText(city)}`;
-
 const buildIxSummaries = ({ countries, ixRows, netixlanRows }) => {
   const ixLookup = new Map(ixRows.map((ix) => [ix.id, ix]));
   const countrySet = new Set(countries);
@@ -244,97 +242,56 @@ const buildCombinedViewRows = ({
   const ixLookup = new Map(ixRows.map((ix) => [ix.id, ix]));
   const facLookup = new Map(facRows.map((fac) => [fac.id, fac]));
   const countrySet = new Set(countries);
-  const rowsByNetMarket = new Map();
-
-  const ensureBucket = (netId, marketCountry, marketCity) => {
-    const key = `${netId}::${marketKeyFor(marketCountry, marketCity)}`;
-    if (!rowsByNetMarket.has(key)) {
-      rowsByNetMarket.set(key, {
-        netId,
-        marketCountry: normalizeText(marketCountry).toUpperCase(),
-        marketCity: normalizeText(marketCity),
-        ixIds: new Set(),
-        ixNames: new Set(),
-        ixCities: new Set(),
-        ixCountries: new Set(),
-        deployedCapacityMbps: 0,
-        facilityIds: new Set(),
-        facilityNames: new Set(),
-        facilityCities: new Set(),
-        facilityCountries: new Set(),
-      });
-    }
-    return rowsByNetMarket.get(key);
-  };
+  const rows = [];
 
   netixlanRows.forEach((row) => {
     const ix = ixLookup.get(row.ix_id);
     if (!ix || !countrySet.has(ix.country) || !row.net_id) return;
-    const bucket = ensureBucket(row.net_id, ix.country, ix.city);
-    bucket.ixIds.add(String(row.ix_id));
-    if (ix.name) bucket.ixNames.add(ix.name);
-    if (ix.city) bucket.ixCities.add(ix.city);
-    if (ix.country) bucket.ixCountries.add(ix.country);
+    const net = netLookup.get(row.net_id) || {};
     const speed = Number(row.speed);
-    if (Number.isFinite(speed)) {
-      bucket.deployedCapacityMbps += speed;
-    }
+    rows.push([
+      snapshotDate,
+      scopeCode,
+      normalizeText(ix.country).toUpperCase(),
+      normalizeText(ix.city),
+      "ix",
+      row.net_id,
+      net.asn || "",
+      net.name || "",
+      net.info_type || "",
+      row.ix_id || "",
+      ix.name || "",
+      Number.isFinite(speed) ? speed : "",
+      "",
+      "",
+      "",
+      "",
+    ]);
   });
 
   netfacRows.forEach((row) => {
     const fac = facLookup.get(row.fac_id);
     if (!fac || !countrySet.has(fac.country) || !row.net_id) return;
-    const bucket = ensureBucket(row.net_id, fac.country, fac.city);
-    bucket.facilityIds.add(String(row.fac_id));
-    if (fac.name) bucket.facilityNames.add(fac.name);
-    if (fac.city) bucket.facilityCities.add(fac.city);
-    if (fac.country) bucket.facilityCountries.add(fac.country);
+    const net = netLookup.get(row.net_id) || {};
+    rows.push([
+      snapshotDate,
+      scopeCode,
+      normalizeText(fac.country).toUpperCase(),
+      normalizeText(fac.city),
+      "facility",
+      row.net_id,
+      net.asn || "",
+      net.name || "",
+      net.info_type || "",
+      "",
+      "",
+      "",
+      row.fac_id || "",
+      fac.name || "",
+      fac.clli || "",
+      fac.org_name || "",
+    ]);
   });
-
-  const rows = Array.from(rowsByNetMarket.values())
-    .map((summary) => {
-      const net = netLookup.get(summary.netId) || {};
-      const ixIdsList = uniqueSorted(Array.from(summary.ixIds));
-      const ixNamesList = uniqueSorted(Array.from(summary.ixNames));
-      const ixCitiesList = uniqueSorted(Array.from(summary.ixCities));
-      const ixCountriesList = uniqueSorted(Array.from(summary.ixCountries));
-      const facilityIds = uniqueSorted(Array.from(summary.facilityIds));
-      const facilityNames = uniqueSorted(Array.from(summary.facilityNames));
-      const facilityCities = uniqueSorted(Array.from(summary.facilityCities));
-      const facilityCountries = uniqueSorted(Array.from(summary.facilityCountries));
-
-      return [
-        snapshotDate,
-        scopeCode,
-        summary.marketCountry,
-        summary.marketCity,
-        summary.netId,
-        net.asn || "",
-        net.name || "",
-        net.info_type || "",
-        ixIdsList.length,
-        ixIdsList.join(" | "),
-        ixNamesList.join(" | "),
-        ixCitiesList.join(" | "),
-        ixCountriesList.join(" | "),
-        summary.deployedCapacityMbps,
-        facilityIds.length,
-        facilityIds.join(" | "),
-        facilityNames.join(" | "),
-        facilityCities.join(" | "),
-        facilityCountries.join(" | "),
-      ];
-    })
-    .sort((a, b) => {
-      const countryCmp = String(a[2]).localeCompare(String(b[2]));
-      if (countryCmp !== 0) return countryCmp;
-      const cityCmp = String(a[3]).localeCompare(String(b[3]));
-      if (cityCmp !== 0) return cityCmp;
-      const asnA = Number(a[5]) || 0;
-      const asnB = Number(b[5]) || 0;
-      if (asnA !== asnB) return asnA - asnB;
-      return String(a[6]).localeCompare(String(b[6]));
-    });
 
   return [
     [
@@ -342,23 +299,31 @@ const buildCombinedViewRows = ({
       scopeType,
       "market_country",
       "market_city",
+      "record_type",
       "network_id",
       "asn",
       "network_name",
       "network_type",
-      "ix_count",
-      "ix_ids",
-      "ix_names",
-      "ix_cities",
-      "ix_countries",
+      "ix_id",
+      "ix_name",
       "deployed_capacity_mbps",
-      "facility_count",
-      "facility_ids",
-      "facility_names",
-      "facility_cities",
-      "facility_countries",
+      "facility_id",
+      "facility_name",
+      "facility_clli",
+      "facility_org_name",
     ],
-    ...rows,
+    ...rows.sort((a, b) => {
+      const typeCmp = String(a[4]).localeCompare(String(b[4]));
+      if (typeCmp !== 0) return typeCmp;
+      const countryCmp = String(a[2]).localeCompare(String(b[2]));
+      if (countryCmp !== 0) return countryCmp;
+      const cityCmp = String(a[3]).localeCompare(String(b[3]));
+      if (cityCmp !== 0) return cityCmp;
+      const asnA = Number(a[6]) || 0;
+      const asnB = Number(b[6]) || 0;
+      if (asnA !== asnB) return asnA - asnB;
+      return String(a[7]).localeCompare(String(b[7]));
+    }),
   ];
 };
 

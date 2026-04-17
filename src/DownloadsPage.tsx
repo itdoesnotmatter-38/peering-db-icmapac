@@ -173,7 +173,7 @@ export default function DownloadsPage() {
               Generate country or region CSVs from a stored snapshot. `IX view` summarizes each
               network's deployed capacity across all IXs in the selected market, while `facility view`
               summarizes each network's presence across all facilities in that market. `Combined view`
-              puts both into one file for the selected market, with separate rows by city/country.
+              puts both into one file for the selected market, with each IX row and each facility row kept separate.
             </div>
 
             <label style={{ display: "block", fontSize: 13, color: shell.muted, marginBottom: 8 }}>
