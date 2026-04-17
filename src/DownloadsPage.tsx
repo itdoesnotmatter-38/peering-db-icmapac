@@ -61,7 +61,7 @@ const buildSnapshotScopedExportUrl = (
   snapshotDate: string,
   scope: ExportScope,
   scopeCode: string,
-  view: "ix" | "facility"
+  view: "ix" | "facility" | "combined"
 ) =>
   withApiRoot(
     `/api/snapshots/country-csv?snapshotDate=${encodeURIComponent(snapshotDate)}&${
@@ -172,7 +172,8 @@ export default function DownloadsPage() {
             <div style={{ color: shell.muted, lineHeight: 1.5, marginBottom: 16 }}>
               Generate country or region CSVs from a stored snapshot. `IX view` summarizes each
               network's deployed capacity across all IXs in the selected market, while `facility view`
-              summarizes each network's presence across all facilities in that market.
+              summarizes each network's presence across all facilities in that market. `Combined view`
+              puts both into one file for the selected market.
             </div>
 
             <label style={{ display: "block", fontSize: 13, color: shell.muted, marginBottom: 8 }}>
@@ -281,6 +282,19 @@ export default function DownloadsPage() {
             )}
 
             <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+              <a
+                href={buildSnapshotScopedExportUrl(selectedSnapshotDate, exportScope, activeScopeCode, "combined")}
+                style={{
+                  background: "#93c5fd",
+                  color: "#172554",
+                  textDecoration: "none",
+                  padding: "12px 16px",
+                  borderRadius: 12,
+                  fontWeight: 700,
+                }}
+              >
+                Download combined CSV
+              </a>
               <a
                 href={buildSnapshotScopedExportUrl(selectedSnapshotDate, exportScope, activeScopeCode, "ix")}
                 style={{
