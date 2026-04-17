@@ -4,6 +4,13 @@ const { ensureSchema, getRunDetails } = require("../_lib/snapshotDb");
 
 const isValidSnapshotDate = (value) => /^\d{4}-\d{2}-\d{2}$/.test(value || "");
 const normalizeCountry = (value) => String(value || "").trim().toUpperCase();
+const normalizeRegion = (value) => String(value || "").trim().toUpperCase();
+
+const REGION_COUNTRIES = {
+  APAC: ["AU", "HK", "ID", "IN", "JP", "KR", "MY", "PH", "SG", "TH"],
+  EMEA: ["DE", "ES", "FR", "GB", "NL"],
+  AMER: ["US"],
+};
 
 const escapeCsvCell = (value) => {
   if (value === undefined || value === null) return "";
@@ -54,10 +61,11 @@ const uniqueSorted = (values) =>
     a.localeCompare(b)
   );
 
-const buildIxViewRows = ({ snapshotDate, country, ixRows, netixlanRows, netRows }) => {
+const buildIxViewRows = ({ snapshotDate, scopeType, scopeCode, countries, ixRows, netixlanRows, netRows }) => {
   const ixLookup = new Map(ixRows.map((ix) => [ix.id, ix]));
   const netLookup = new Map(netRows.map((net) => [net.id, net]));
-  const ixIds = new Set(ixRows.filter((ix) => ix.country === country).map((ix) => ix.id));
+  const countrySet = new Set(countries);
+  const ixIds = new Set(ixRows.filter((ix) => countrySet.has(ix.country)).map((ix) => ix.id));
   const rowsByNet = new Map();
 
   netixlanRows
@@ -70,6 +78,7 @@ const buildIxViewRows = ({ snapshotDate, country, ixRows, netixlanRows, netRows 
           ixIds: new Set(),
           ixNames: new Set(),
           ixCities: new Set(),
+          ixCountries: new Set(),
           deployedCapacityMbps: 0,
         });
       }
@@ -78,6 +87,7 @@ const buildIxViewRows = ({ snapshotDate, country, ixRows, netixlanRows, netRows 
       bucket.ixIds.add(String(row.ix_id));
       if (ix.name) bucket.ixNames.add(ix.name);
       if (ix.city) bucket.ixCities.add(ix.city);
+      if (ix.country) bucket.ixCountries.add(ix.country);
       const speed = Number(row.speed);
       if (Number.isFinite(speed)) {
         bucket.deployedCapacityMbps += speed;
@@ -90,9 +100,10 @@ const buildIxViewRows = ({ snapshotDate, country, ixRows, netixlanRows, netRows 
       const ixIdsList = uniqueSorted(Array.from(summary.ixIds));
       const ixNamesList = uniqueSorted(Array.from(summary.ixNames));
       const ixCitiesList = uniqueSorted(Array.from(summary.ixCities));
+      const ixCountriesList = uniqueSorted(Array.from(summary.ixCountries));
       return [
         snapshotDate,
-        country,
+        scopeCode,
         netId,
         net.asn || "",
         net.name || "",
@@ -101,6 +112,7 @@ const buildIxViewRows = ({ snapshotDate, country, ixRows, netixlanRows, netRows 
         ixIdsList.join(" | "),
         ixNamesList.join(" | "),
         ixCitiesList.join(" | "),
+        ixCountriesList.join(" | "),
         summary.deployedCapacityMbps,
       ];
     })
@@ -114,7 +126,7 @@ const buildIxViewRows = ({ snapshotDate, country, ixRows, netixlanRows, netRows 
   return [
     [
       "snapshot_date",
-      "country",
+      scopeType,
       "network_id",
       "asn",
       "network_name",
@@ -123,16 +135,18 @@ const buildIxViewRows = ({ snapshotDate, country, ixRows, netixlanRows, netRows 
       "ix_ids",
       "ix_names",
       "ix_cities",
+      "ix_countries",
       "deployed_capacity_mbps",
     ],
     ...rows,
   ];
 };
 
-const buildFacilityViewRows = ({ snapshotDate, country, facRows, netfacRows, netRows }) => {
+const buildFacilityViewRows = ({ snapshotDate, scopeType, scopeCode, countries, facRows, netfacRows, netRows }) => {
   const facLookup = new Map(facRows.map((fac) => [fac.id, fac]));
   const netLookup = new Map(netRows.map((net) => [net.id, net]));
-  const facIds = new Set(facRows.filter((fac) => fac.country === country).map((fac) => fac.id));
+  const countrySet = new Set(countries);
+  const facIds = new Set(facRows.filter((fac) => countrySet.has(fac.country)).map((fac) => fac.id));
   const rowsByNet = new Map();
 
   netfacRows
@@ -145,6 +159,7 @@ const buildFacilityViewRows = ({ snapshotDate, country, facRows, netfacRows, net
           facilityIds: new Set(),
           facilityNames: new Set(),
           facilityCities: new Set(),
+          facilityCountries: new Set(),
         });
       }
       const bucket = rowsByNet.get(key);
@@ -152,6 +167,7 @@ const buildFacilityViewRows = ({ snapshotDate, country, facRows, netfacRows, net
       bucket.facilityIds.add(String(row.fac_id));
       if (fac.name) bucket.facilityNames.add(fac.name);
       if (fac.city) bucket.facilityCities.add(fac.city);
+      if (fac.country) bucket.facilityCountries.add(fac.country);
     });
 
   const rows = Array.from(rowsByNet.entries())
@@ -160,9 +176,10 @@ const buildFacilityViewRows = ({ snapshotDate, country, facRows, netfacRows, net
       const facilityIds = uniqueSorted(Array.from(summary.facilityIds));
       const facilityNames = uniqueSorted(Array.from(summary.facilityNames));
       const facilityCities = uniqueSorted(Array.from(summary.facilityCities));
+      const facilityCountries = uniqueSorted(Array.from(summary.facilityCountries));
       return [
         snapshotDate,
-        country,
+        scopeCode,
         netId,
         net.asn || "",
         net.name || "",
@@ -171,6 +188,7 @@ const buildFacilityViewRows = ({ snapshotDate, country, facRows, netfacRows, net
         facilityIds.join(" | "),
         facilityNames.join(" | "),
         facilityCities.join(" | "),
+        facilityCountries.join(" | "),
       ];
     })
     .sort((a, b) => {
@@ -183,7 +201,7 @@ const buildFacilityViewRows = ({ snapshotDate, country, facRows, netfacRows, net
   return [
     [
       "snapshot_date",
-      "country",
+      scopeType,
       "network_id",
       "asn",
       "network_name",
@@ -192,6 +210,7 @@ const buildFacilityViewRows = ({ snapshotDate, country, facRows, netfacRows, net
       "facility_ids",
       "facility_names",
       "facility_cities",
+      "facility_countries",
     ],
     ...rows,
   ];
@@ -200,19 +219,41 @@ const buildFacilityViewRows = ({ snapshotDate, country, facRows, netfacRows, net
 module.exports = async (req, res) => {
   const snapshotDate = String(req.query?.snapshotDate || "");
   const country = normalizeCountry(req.query?.country);
+  const region = normalizeRegion(req.query?.region);
   const view = String(req.query?.view || "").trim().toLowerCase();
 
   if (!isValidSnapshotDate(snapshotDate)) {
     res.status(400).json({ error: "Missing or invalid snapshotDate (expected YYYY-MM-DD)" });
     return;
   }
-  if (!country || country.length !== 2) {
-    res.status(400).json({ error: "Missing or invalid country code (expected ISO alpha-2)" });
+  if ((country && region) || (!country && !region)) {
+    res.status(400).json({ error: "Provide exactly one export scope: country=ISO alpha-2 or region=APAC|EMEA|AMER" });
     return;
   }
   if (view !== "ix" && view !== "facility") {
     res.status(400).json({ error: "Missing or invalid view (expected ix or facility)" });
     return;
+  }
+
+  let scopeType = "country";
+  let scopeCode = country;
+  let countries = [];
+
+  if (country) {
+    if (country.length !== 2) {
+      res.status(400).json({ error: "Missing or invalid country code (expected ISO alpha-2)" });
+      return;
+    }
+    countries = [country];
+  } else {
+    const regionCountries = REGION_COUNTRIES[region];
+    if (!regionCountries) {
+      res.status(400).json({ error: "Missing or invalid region (expected APAC, EMEA, or AMER)" });
+      return;
+    }
+    scopeType = "region";
+    scopeCode = region;
+    countries = regionCountries;
   }
 
   try {
@@ -236,11 +277,11 @@ module.exports = async (req, res) => {
         fetchJsonlGzip(requireFileUrl(manifest, "netixlan")),
         fetchJsonlGzip(netUrl),
       ]);
-      const rows = buildIxViewRows({ snapshotDate, country, ixRows, netixlanRows, netRows });
+      const rows = buildIxViewRows({ snapshotDate, scopeType, scopeCode, countries, ixRows, netixlanRows, netRows });
       res.setHeader("Content-Type", "text/csv; charset=utf-8");
       res.setHeader(
         "Content-Disposition",
-        `attachment; filename="peeringdb-snapshot-${snapshotDate}-ix-${country}.csv"`
+        `attachment; filename="peeringdb-snapshot-${snapshotDate}-ix-${scopeCode}.csv"`
       );
       res.status(200).send(toCsv(rows));
       return;
@@ -251,11 +292,19 @@ module.exports = async (req, res) => {
       fetchJsonlGzip(requireFileUrl(manifest, "netfac")),
       fetchJsonlGzip(netUrl),
     ]);
-    const rows = buildFacilityViewRows({ snapshotDate, country, facRows, netfacRows, netRows });
+    const rows = buildFacilityViewRows({
+      snapshotDate,
+      scopeType,
+      scopeCode,
+      countries,
+      facRows,
+      netfacRows,
+      netRows,
+    });
     res.setHeader("Content-Type", "text/csv; charset=utf-8");
     res.setHeader(
       "Content-Disposition",
-      `attachment; filename="peeringdb-snapshot-${snapshotDate}-facility-${country}.csv"`
+      `attachment; filename="peeringdb-snapshot-${snapshotDate}-facility-${scopeCode}.csv"`
     );
     res.status(200).send(toCsv(rows));
   } catch (err) {

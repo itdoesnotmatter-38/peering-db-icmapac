@@ -12,6 +12,8 @@ type SnapshotRun = {
   networksCsvUrl: string | null;
 };
 
+type ExportScope = "country" | "region";
+
 const COUNTRY_OPTIONS = [
   { code: "SG", label: "Singapore" },
   { code: "ID", label: "Indonesia" },
@@ -23,6 +25,24 @@ const COUNTRY_OPTIONS = [
   { code: "HK", label: "Hong Kong" },
   { code: "JP", label: "Japan" },
   { code: "KR", label: "South Korea" },
+];
+
+const REGION_OPTIONS = [
+  {
+    code: "APAC",
+    label: "APAC",
+    description: "Portal coverage across SG, ID, MY, TH, PH, AU, IN, HK, JP, and KR.",
+  },
+  {
+    code: "EMEA",
+    label: "EMEA",
+    description: "Portal coverage across GB, NL, DE, FR, and ES metros.",
+  },
+  {
+    code: "AMER",
+    label: "AMER",
+    description: "Portal coverage across the tracked US metros.",
+  },
 ];
 
 const shell = {
@@ -37,21 +57,30 @@ const shell = {
 const buildSnapshotCsvUrl = (snapshotDate: string) =>
   withApiRoot(`/api/snapshots/csv?snapshotDate=${encodeURIComponent(snapshotDate)}`);
 
-const buildSnapshotCountryExportUrl = (
+const buildSnapshotScopedExportUrl = (
   snapshotDate: string,
-  country: string,
+  scope: ExportScope,
+  scopeCode: string,
   view: "ix" | "facility"
 ) =>
   withApiRoot(
-    `/api/snapshots/country-csv?snapshotDate=${encodeURIComponent(snapshotDate)}&country=${encodeURIComponent(country)}&view=${view}`
+    `/api/snapshots/country-csv?snapshotDate=${encodeURIComponent(snapshotDate)}&${
+      scope === "country" ? "country" : "region"
+    }=${encodeURIComponent(scopeCode)}&view=${view}`
   );
 
 export default function DownloadsPage() {
   const [snapshotRuns, setSnapshotRuns] = useState<SnapshotRun[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [exportScope, setExportScope] = useState<ExportScope>("country");
   const [country, setCountry] = useState("SG");
+  const [region, setRegion] = useState("APAC");
   const [selectedSnapshotDate, setSelectedSnapshotDate] = useState("");
+
+  const activeRegionOption =
+    REGION_OPTIONS.find((option) => option.code === region) || REGION_OPTIONS[0];
+  const activeScopeCode = exportScope === "country" ? country : region;
 
   useEffect(() => {
     const loadSnapshots = async () => {
@@ -105,7 +134,7 @@ export default function DownloadsPage() {
           <div>
             <div style={{ fontSize: 30, fontWeight: 700 }}>Downloads</div>
             <div style={{ color: shell.muted, marginTop: 6 }}>
-              Snapshot files and country-based CSV exports for IX and facility views.
+              Snapshot files plus country and region CSV exports for IX and facility views.
             </div>
           </div>
           <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
@@ -139,12 +168,11 @@ export default function DownloadsPage() {
               padding: 18,
             }}
           >
-            <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 8 }}>Snapshot country exports</div>
+            <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 8 }}>Snapshot market exports</div>
             <div style={{ color: shell.muted, lineHeight: 1.5, marginBottom: 16 }}>
-              Generate country-specific CSVs from a stored snapshot. `IX view` summarizes each
+              Generate country or region CSVs from a stored snapshot. `IX view` summarizes each
               network's deployed capacity across all IXs in the selected market, while `facility view`
-              summarizes each network's presence across all facilities in that market. Bangkok exports
-              use `Thailand (TH)` and Manila exports use `Philippines (PH)`.
+              summarizes each network's presence across all facilities in that market.
             </div>
 
             <label style={{ display: "block", fontSize: 13, color: shell.muted, marginBottom: 8 }}>
@@ -171,31 +199,90 @@ export default function DownloadsPage() {
             </select>
 
             <label style={{ display: "block", fontSize: 13, color: shell.muted, marginBottom: 8 }}>
-              Country
+              Export scope
             </label>
-            <select
-              value={country}
-              onChange={(e) => setCountry(e.target.value)}
-              style={{
-                width: "100%",
-                background: shell.bg,
-                color: shell.text,
-                border: `1px solid ${shell.border}`,
-                borderRadius: 12,
-                padding: "12px 14px",
-                marginBottom: 16,
-              }}
-            >
-              {COUNTRY_OPTIONS.map((option) => (
-                <option key={option.code} value={option.code}>
-                  {option.label} ({option.code})
-                </option>
-              ))}
-            </select>
+            <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 16 }}>
+              {(["country", "region"] as ExportScope[]).map((scope) => {
+                const active = exportScope === scope;
+                return (
+                  <button
+                    key={scope}
+                    type="button"
+                    onClick={() => setExportScope(scope)}
+                    style={{
+                      background: active ? shell.accent : shell.bg,
+                      color: active ? "#052e16" : shell.text,
+                      border: `1px solid ${active ? shell.accent : shell.border}`,
+                      borderRadius: 999,
+                      padding: "10px 14px",
+                      fontWeight: 700,
+                      cursor: "pointer",
+                    }}
+                  >
+                    {scope === "country" ? "Country export" : "Region export"}
+                  </button>
+                );
+              })}
+            </div>
+
+            {exportScope === "country" ? (
+              <>
+                <label style={{ display: "block", fontSize: 13, color: shell.muted, marginBottom: 8 }}>
+                  Country
+                </label>
+                <select
+                  value={country}
+                  onChange={(e) => setCountry(e.target.value)}
+                  style={{
+                    width: "100%",
+                    background: shell.bg,
+                    color: shell.text,
+                    border: `1px solid ${shell.border}`,
+                    borderRadius: 12,
+                    padding: "12px 14px",
+                    marginBottom: 16,
+                  }}
+                >
+                  {COUNTRY_OPTIONS.map((option) => (
+                    <option key={option.code} value={option.code}>
+                      {option.label} ({option.code})
+                    </option>
+                  ))}
+                </select>
+              </>
+            ) : (
+              <>
+                <label style={{ display: "block", fontSize: 13, color: shell.muted, marginBottom: 8 }}>
+                  Region
+                </label>
+                <select
+                  value={region}
+                  onChange={(e) => setRegion(e.target.value)}
+                  style={{
+                    width: "100%",
+                    background: shell.bg,
+                    color: shell.text,
+                    border: `1px solid ${shell.border}`,
+                    borderRadius: 12,
+                    padding: "12px 14px",
+                    marginBottom: 8,
+                  }}
+                >
+                  {REGION_OPTIONS.map((option) => (
+                    <option key={option.code} value={option.code}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+                <div style={{ color: shell.muted, fontSize: 13, lineHeight: 1.5, marginBottom: 16 }}>
+                  {activeRegionOption.description}
+                </div>
+              </>
+            )}
 
             <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
               <a
-                href={buildSnapshotCountryExportUrl(selectedSnapshotDate, country, "ix")}
+                href={buildSnapshotScopedExportUrl(selectedSnapshotDate, exportScope, activeScopeCode, "ix")}
                 style={{
                   background: shell.accent,
                   color: "#052e16",
@@ -208,7 +295,7 @@ export default function DownloadsPage() {
                 Download IX view CSV
               </a>
               <a
-                href={buildSnapshotCountryExportUrl(selectedSnapshotDate, country, "facility")}
+                href={buildSnapshotScopedExportUrl(selectedSnapshotDate, exportScope, activeScopeCode, "facility")}
                 style={{
                   background: "#d1fae5",
                   color: "#14532d",
@@ -220,6 +307,9 @@ export default function DownloadsPage() {
               >
                 Download facility view CSV
               </a>
+            </div>
+            <div style={{ color: shell.muted, lineHeight: 1.5, marginTop: 12, fontSize: 13 }}>
+              Region exports follow the portal's tracked metro footprint rather than every country in the wider region.
             </div>
             {!selectedSnapshotDate && (
               <div style={{ color: shell.muted, marginTop: 12 }}>No snapshot is available yet.</div>
