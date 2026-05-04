@@ -19,10 +19,13 @@ const DEFAULTS = {
   timezone: process.env.SNAPSHOT_TIMEZONE || "Asia/Singapore",
   blobPrefixRoot: process.env.SNAPSHOT_BLOB_PREFIX || "snapshots",
   blobAccess: process.env.SNAPSHOT_BLOB_ACCESS || "public",
+  snapshotDate: process.env.SNAPSHOT_DATE_OVERRIDE || "",
   pageLimit: Number.parseInt(process.env.SNAPSHOT_PAGE_LIMIT || "5000", 10),
   maxPages: Number.parseInt(process.env.SNAPSHOT_MAX_PAGES || "5000", 10),
   pageDelayMs: Number.parseInt(process.env.SNAPSHOT_PAGE_DELAY_MS || "150", 10),
 };
+
+const SNAPSHOT_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 const formatDateInTz = (date, timeZone) =>
   new Intl.DateTimeFormat("en-CA", {
@@ -36,6 +39,15 @@ const isLastDayOfMonth = (date, timeZone) => {
   const today = formatDateInTz(date, timeZone);
   const tomorrow = formatDateInTz(new Date(date.getTime() + 24 * 60 * 60 * 1000), timeZone);
   return today.slice(0, 7) !== tomorrow.slice(0, 7);
+};
+
+const normalizeSnapshotDate = (value) => {
+  if (!value) return "";
+  const snapshotDate = String(value).trim();
+  if (!SNAPSHOT_DATE_RE.test(snapshotDate)) {
+    throw new Error("Invalid snapshot date override. Expected YYYY-MM-DD.");
+  }
+  return snapshotDate;
 };
 
 const createGzipWriter = async (filePath) => {
@@ -122,9 +134,10 @@ const runGlobalSnapshot = async ({ force = false, now = new Date(), config = {} 
     ...config,
   };
 
-  const snapshotDate = formatDateInTz(now, snapshotConfig.timezone);
+  const snapshotDateOverride = normalizeSnapshotDate(snapshotConfig.snapshotDate);
+  const snapshotDate = snapshotDateOverride || formatDateInTz(now, snapshotConfig.timezone);
 
-  if (!force && !isLastDayOfMonth(now, snapshotConfig.timezone)) {
+  if (!force && !snapshotDateOverride && !isLastDayOfMonth(now, snapshotConfig.timezone)) {
     return {
       ok: true,
       skipped: true,

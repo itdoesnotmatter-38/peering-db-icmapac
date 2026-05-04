@@ -48,6 +48,7 @@ From CLI:
 ```bash
 npm run snapshot:run
 npm run snapshot:run -- --force
+npm run snapshot:run -- --force --snapshot-date=2026-04-30
 ```
 
 From GitHub Actions UI:

@@ -38,7 +38,7 @@ const getRetryDelayMs = (resp, body, attempt) => {
   if (match) {
     const seconds = Number.parseInt(match[1], 10);
     if (Number.isFinite(seconds)) {
-      return Math.min(seconds * 1000, MAX_DELAY_MS);
+      return Math.min(seconds * 1000 + 1000, MAX_DELAY_MS);
     }
   }
 
@@ -48,6 +48,12 @@ const getRetryDelayMs = (resp, body, attempt) => {
 };
 
 const shouldRetry = (status) => status === 429 || status >= 500;
+
+const getErrorMessage = (body, fallback) => {
+  const message = body?.error || body?.message || body?.meta?.error || fallback;
+  if (typeof message !== "string") return fallback;
+  return message;
+};
 
 const fetchWithRetry = async (url, options = {}) => {
   const startTime = Date.now();
@@ -103,7 +109,7 @@ const fetchAllPages = async ({
     const { resp, body } = await fetchWithRetry(url, { headers });
 
     if (!resp.ok) {
-      const message = body?.error || body?.message || `HTTP ${resp.status}`;
+      const message = getErrorMessage(body, `HTTP ${resp.status}`);
       throw new Error(`${obj} fetch failed: ${message}`);
     }
 

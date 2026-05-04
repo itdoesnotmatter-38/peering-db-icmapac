@@ -15,9 +15,13 @@ module.exports = async (req, res) => {
   }
 
   const force = req.query?.force === "1" || req.query?.force === "true";
+  const snapshotDate = typeof req.query?.snapshotDate === "string" ? req.query.snapshotDate : "";
 
   try {
-    const result = await runGlobalSnapshot({ force });
+    const result = await runGlobalSnapshot({
+      force,
+      config: { snapshotDate },
+    });
     res.status(200).json(result);
   } catch (err) {
     console.error("Snapshot run failed", err);
