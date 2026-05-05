@@ -296,6 +296,24 @@ const insertCountryCounts = async (snapshotDate, counts) => {
   }
 };
 
+const listOriginCountryCounts = async (snapshotDate) => {
+  const client = await pool.connect();
+  try {
+    const result = await client.query(
+      `
+      SELECT country, count
+      FROM pdb_snapshot_origin_countries
+      WHERE snapshot_date = $1
+      ORDER BY count DESC, country ASC
+      `,
+      [snapshotDate]
+    );
+    return result.rows;
+  } finally {
+    client.release();
+  }
+};
+
 module.exports = {
   ensureSchema,
   getRun,
@@ -303,6 +321,7 @@ module.exports = {
   clearAggregates,
   insertTypeCounts,
   insertCountryCounts,
+  listOriginCountryCounts,
   listRecentCompleteRuns,
   upsertRunWithUrls,
   getRunDetails,
