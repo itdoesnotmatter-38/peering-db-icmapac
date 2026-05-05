@@ -64,6 +64,7 @@ Portal download API/UI:
 - Dashboard sidebar shows latest downloadable files (`net.jsonl.gz`, `org.jsonl.gz`, `networks.csv`, `manifest.json`).
 - `GET /api/snapshots/csv?snapshotDate=YYYY-MM-DD` generates a `networks.csv` on demand from stored snapshot sources, so older runs remain spreadsheet-downloadable even if they predate `networks.csv` uploads.
 - `GET /api/snapshots/origin-countries-csv?snapshotDate=YYYY-MM-DD` downloads network origin country counts as `snapshot_date`, `origin_country`, and `network_count`. It uses stored snapshot aggregates when present and falls back to the raw `net`/`org` snapshot files.
+- `GET /api/snapshots/origin-networks-csv?snapshotDate=YYYY-MM-DD` downloads one row per network with `asn`, `network_name`, `network_type`, `org_name`, `origin_country`, and `origin_city`.
 - `/downloads` provides a dedicated UI for snapshot downloads plus snapshot-based country and region exports for `combined`, `IX view`, and `facility view` CSVs.
 - `GET /api/snapshots/country-csv?snapshotDate=YYYY-MM-DD&country=SG&view=ix` generates snapshot-based country CSV exports. `IX view` is a network-level summary with deployed capacity across all IXs in the selected market. Use `view=facility` for a network-level summary of presence across all facilities in the selected market.
 - `GET /api/snapshots/country-csv?snapshotDate=YYYY-MM-DD&region=APAC&view=ix` generates snapshot-based region CSV exports using the current portal metro coverage countries for `APAC`, `EMEA`, and `AMER`.

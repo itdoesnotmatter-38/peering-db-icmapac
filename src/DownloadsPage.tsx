@@ -60,6 +60,9 @@ const buildSnapshotCsvUrl = (snapshotDate: string) =>
 const buildSnapshotOriginCountriesCsvUrl = (snapshotDate: string) =>
   withApiRoot(`/api/snapshots/origin-countries-csv?snapshotDate=${encodeURIComponent(snapshotDate)}`);
 
+const buildSnapshotOriginNetworksCsvUrl = (snapshotDate: string) =>
+  withApiRoot(`/api/snapshots/origin-networks-csv?snapshotDate=${encodeURIComponent(snapshotDate)}`);
+
 const buildSnapshotScopedExportUrl = (
   snapshotDate: string,
   scope: ExportScope,
@@ -343,8 +346,8 @@ export default function DownloadsPage() {
           >
             <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 8 }}>Snapshot downloads</div>
             <div style={{ color: shell.muted, lineHeight: 1.5, marginBottom: 16 }}>
-              Download stored snapshot files. `networks.csv` and `origin-countries.csv` are available either
-              from stored outputs or generated on demand from the snapshot source files.
+              Download stored snapshot files. `origin-networks.csv` gives one row per network with its
+              organization country and city.
             </div>
 
             {loading && <div style={{ color: shell.muted }}>Loading snapshot list...</div>}
@@ -404,6 +407,14 @@ export default function DownloadsPage() {
                       style={{ color: "#86efac" }}
                     >
                       origin-countries.csv
+                    </a>
+                    <a
+                      href={buildSnapshotOriginNetworksCsvUrl(run.snapshotDate)}
+                      target="_blank"
+                      rel="noreferrer"
+                      style={{ color: "#86efac" }}
+                    >
+                      origin-networks.csv
                     </a>
                   </div>
                 </div>
