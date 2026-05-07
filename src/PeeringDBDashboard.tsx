@@ -4679,7 +4679,7 @@ const PeeringDBDashboard: React.FC = () => {
             }}
           >
             <div style={{ fontSize: 11, color: theme.textMuted, marginBottom: 8, fontWeight: 700, textTransform: "uppercase" }}>
-              Workspace
+              Main workflow
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
               <button
@@ -4698,7 +4698,7 @@ const PeeringDBDashboard: React.FC = () => {
                   fontWeight: 700,
                 }}
               >
-                Matrix view
+                Live explore
               </button>
               <button
                 type="button"
@@ -4716,26 +4716,26 @@ const PeeringDBDashboard: React.FC = () => {
                   fontWeight: 700,
                 }}
               >
-                Compare metros
+                Compare presence
               </button>
-              <button
-                type="button"
-                onClick={() => setActiveView("insights")}
+              <Link
+                to="/trends"
                 style={{
                   width: "100%",
+                  boxSizing: "border-box",
                   textAlign: "left",
-                  color: activeView === "insights" ? "#172554" : theme.textPrimary,
-                  border: `1px solid ${activeView === "insights" ? "#818cf8" : theme.cardBorder}`,
+                  color: theme.textPrimary,
+                  textDecoration: "none",
+                  border: `1px solid ${theme.cardBorder}`,
                   borderRadius: 10,
                   padding: "10px 12px",
                   fontSize: 14,
-                  background: activeView === "insights" ? "#c7d2fe" : "#0f172a",
-                  cursor: "pointer",
+                  background: "#0f172a",
                   fontWeight: 700,
                 }}
               >
-                Insights builder
-              </button>
+                Historical trends
+              </Link>
               <Link
                 to="/downloads"
                 style={{
@@ -4752,8 +4752,32 @@ const PeeringDBDashboard: React.FC = () => {
                   fontWeight: 700,
                 }}
               >
-                Open downloads
+                Downloads
               </Link>
+              <details style={{ marginTop: 4 }}>
+                <summary style={{ color: theme.textMuted, cursor: "pointer", fontSize: 12, fontWeight: 800 }}>
+                  Advanced
+                </summary>
+                <button
+                  type="button"
+                  onClick={() => setActiveView("insights")}
+                  style={{
+                    width: "100%",
+                    textAlign: "left",
+                    color: activeView === "insights" ? "#172554" : theme.textPrimary,
+                    border: `1px solid ${activeView === "insights" ? "#818cf8" : theme.cardBorder}`,
+                    borderRadius: 10,
+                    padding: "10px 12px",
+                    fontSize: 14,
+                    background: activeView === "insights" ? "#c7d2fe" : "#0f172a",
+                    cursor: "pointer",
+                    fontWeight: 700,
+                    marginTop: 8,
+                  }}
+                >
+                  Custom chart builder
+                </button>
+              </details>
             </div>
           </div>
 

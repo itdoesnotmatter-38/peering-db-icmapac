@@ -145,6 +145,18 @@ export default function DownloadsPage() {
           </div>
           <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
             <Link
+              to="/trends"
+              style={{
+                color: shell.text,
+                textDecoration: "none",
+                border: `1px solid ${shell.border}`,
+                padding: "10px 14px",
+                borderRadius: 999,
+              }}
+            >
+              APAC trends
+            </Link>
+            <Link
               to="/"
               style={{
                 color: shell.text,
