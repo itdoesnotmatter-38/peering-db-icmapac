@@ -309,7 +309,7 @@ export default function TrendsPage() {
   const [networkEndSnapshot, setNetworkEndSnapshot] = useState("");
   const [fromSnapshot, setFromSnapshot] = useState("");
   const [toSnapshot, setToSnapshot] = useState("");
-  const [diffMetro, setDiffMetro] = useState("");
+  const [diffMetros, setDiffMetros] = useState<string[]>([]);
   const [diffFilter, setDiffFilter] = useState<DiffFilter>("all");
 
   useEffect(() => {
@@ -331,7 +331,7 @@ export default function TrendsPage() {
         setNetworkStartSnapshot(snapshots[0] || "");
         setNetworkEndSnapshot(snapshots[snapshots.length - 1] || "");
         setNetworkMetro(metros[0] || "");
-        setDiffMetro(metros[0] || "");
+        setDiffMetros(metros[0] ? [metros[0]] : []);
         if (snapshots.length === 0) {
           setError("No complete trend snapshots found yet. We need at least one snapshot with stored net, ix, fac, netixlan, and netfac files.");
         }
@@ -587,60 +587,65 @@ export default function TrendsPage() {
   }, [effectiveTrendMetros, latestSnapshot, payload]);
 
   const diffRows = useMemo(() => {
-    if (!payload || !fromSnapshot || !toSnapshot || !diffMetro) return [];
-    const from = new Map<number, NetworkTrendRow>();
-    const to = new Map<number, NetworkTrendRow>();
-    const buildIxChanges = (networkId: number) => {
-      const rows = payload.networkIxTrend.filter(
-        (row) =>
-          row.metro === diffMetro &&
-          row.networkId === networkId &&
-          (row.snapshotDate === fromSnapshot || row.snapshotDate === toSnapshot)
-      );
-      const byIx = new Map<string, { ixName: string; before: number; after: number }>();
-      rows.forEach((row) => {
-        const key = String(row.ixId);
-        const bucket = byIx.get(key) || { ixName: row.ixName || `IX ${row.ixId}`, before: 0, after: 0 };
-        if (row.snapshotDate === fromSnapshot) bucket.before += row.capacityMbps;
-        if (row.snapshotDate === toSnapshot) bucket.after += row.capacityMbps;
-        byIx.set(key, bucket);
-      });
-      return Array.from(byIx.values())
-        .map((row) => ({
-          ...row,
-          change: row.after - row.before,
-        }))
-        .filter((row) => row.change !== 0)
-        .sort((a, b) => Math.abs(b.change) - Math.abs(a.change));
-    };
-    payload.networkTrend
-      .filter((row) => row.metro === diffMetro && (row.snapshotDate === fromSnapshot || row.snapshotDate === toSnapshot))
-      .forEach((row) => {
-        if (row.snapshotDate === fromSnapshot) from.set(row.networkId, row);
-        if (row.snapshotDate === toSnapshot) to.set(row.networkId, row);
-      });
-    const ids = new Set([...Array.from(from.keys()), ...Array.from(to.keys())]);
-    return Array.from(ids)
-      .map((id) => {
-        const before = from.get(id);
-        const after = to.get(id);
-        return {
-          networkId: id,
-          asn: after?.asn || before?.asn || null,
-          networkName: after?.networkName || before?.networkName || "",
-          status: before && after ? "Existing" : after ? "Added" : "Removed",
-          beforeCapacity: before?.capacityMbps || 0,
-          afterCapacity: after?.capacityMbps || 0,
-          capacityChange: (after?.capacityMbps || 0) - (before?.capacityMbps || 0),
-          beforeFacilities: before?.facilityCount || 0,
-          afterFacilities: after?.facilityCount || 0,
-          ixChanges: buildIxChanges(id),
-        };
-      })
+    if (!payload || !fromSnapshot || !toSnapshot || diffMetros.length === 0) return [];
+    const rowsByMetro = diffMetros.flatMap((metro) => {
+      const from = new Map<number, NetworkTrendRow>();
+      const to = new Map<number, NetworkTrendRow>();
+      const buildIxChanges = (networkId: number) => {
+        const rows = payload.networkIxTrend.filter(
+          (row) =>
+            row.metro === metro &&
+            row.networkId === networkId &&
+            (row.snapshotDate === fromSnapshot || row.snapshotDate === toSnapshot)
+        );
+        const byIx = new Map<string, { ixName: string; before: number; after: number }>();
+        rows.forEach((row) => {
+          const key = String(row.ixId);
+          const bucket = byIx.get(key) || { ixName: row.ixName || `IX ${row.ixId}`, before: 0, after: 0 };
+          if (row.snapshotDate === fromSnapshot) bucket.before += row.capacityMbps;
+          if (row.snapshotDate === toSnapshot) bucket.after += row.capacityMbps;
+          byIx.set(key, bucket);
+        });
+        return Array.from(byIx.values())
+          .map((row) => ({
+            ...row,
+            metro,
+            ixLabel: diffMetros.length > 1 ? `${metro} · ${row.ixName}` : row.ixName,
+            change: row.after - row.before,
+          }))
+          .filter((row) => row.change !== 0)
+          .sort((a, b) => Math.abs(b.change) - Math.abs(a.change));
+      };
+      payload.networkTrend
+        .filter((row) => row.metro === metro && (row.snapshotDate === fromSnapshot || row.snapshotDate === toSnapshot))
+        .forEach((row) => {
+          if (row.snapshotDate === fromSnapshot) from.set(row.networkId, row);
+          if (row.snapshotDate === toSnapshot) to.set(row.networkId, row);
+        });
+      const ids = new Set([...Array.from(from.keys()), ...Array.from(to.keys())]);
+      return Array.from(ids).map((id) => {
+          const before = from.get(id);
+          const after = to.get(id);
+          return {
+            metro,
+            networkId: id,
+            asn: after?.asn || before?.asn || null,
+            networkName: after?.networkName || before?.networkName || "",
+            status: before && after ? "Existing" : after ? "Added" : "Removed",
+            beforeCapacity: before?.capacityMbps || 0,
+            afterCapacity: after?.capacityMbps || 0,
+            capacityChange: (after?.capacityMbps || 0) - (before?.capacityMbps || 0),
+            beforeFacilities: before?.facilityCount || 0,
+            afterFacilities: after?.facilityCount || 0,
+            ixChanges: buildIxChanges(id),
+          };
+        });
+    });
+    return rowsByMetro
       .filter((row) => row.status !== "Existing" || row.capacityChange !== 0 || row.beforeFacilities !== row.afterFacilities)
       .sort((a, b) => Math.abs(b.capacityChange) - Math.abs(a.capacityChange))
-      .slice(0, 100);
-  }, [diffMetro, fromSnapshot, payload, toSnapshot]);
+      .slice(0, 160);
+  }, [diffMetros, fromSnapshot, payload, toSnapshot]);
 
   const diffSummary = useMemo(() => {
     return diffRows.reduce(
@@ -698,7 +703,7 @@ export default function TrendsPage() {
   const diffHeatmap = useMemo(() => {
     const networks = filteredDiffRows.filter((row) => row.ixChanges.length > 0).slice(0, 18);
     const ixNames = Array.from(
-      new Set(networks.flatMap((row) => row.ixChanges.map((ix) => ix.ixName)))
+      new Set(networks.flatMap((row) => row.ixChanges.map((ix) => ix.ixLabel)))
     ).sort((a, b) => a.localeCompare(b));
     const maxAbs = Math.max(
       1,
@@ -709,6 +714,10 @@ export default function TrendsPage() {
 
   const toggleMetro = (metro: string) => {
     setSelectedMetros((prev) => (prev.includes(metro) ? prev.filter((item) => item !== metro) : [...prev, metro]));
+  };
+
+  const toggleDiffMetro = (metro: string) => {
+    setDiffMetros((prev) => (prev.includes(metro) ? prev.filter((item) => item !== metro) : [...prev, metro]));
   };
 
   const exportOverview = () => {
@@ -929,18 +938,56 @@ export default function TrendsPage() {
         <section style={cardStyle}>
           <div style={sectionTitle}>Market changes</div>
           <div style={{ color: shell.muted, marginBottom: 14 }}>
-            Compare two snapshots for one APAC metro. This highlights network additions/removals, IX capacity changes, and DC presence movement.
+            Compare two snapshots across one or more APAC metros. This highlights network additions/removals, IX capacity changes, and DC presence movement.
           </div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(180px, 1fr))", gap: 12, marginBottom: 16 }}>
-            <select value={fromSnapshot} onChange={(event) => setFromSnapshot(event.target.value)} style={inputStyle}>
-              {snapshots.map((date) => <option key={date} value={date}>{date}</option>)}
-            </select>
-            <select value={toSnapshot} onChange={(event) => setToSnapshot(event.target.value)} style={inputStyle}>
-              {snapshots.map((date) => <option key={date} value={date}>{date}</option>)}
-            </select>
-            <select value={diffMetro} onChange={(event) => setDiffMetro(event.target.value)} style={inputStyle}>
-              {metros.map((metro) => <option key={metro.key} value={metro.key}>{metro.key}</option>)}
-            </select>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(180px, 1fr))", gap: 12, marginBottom: 14 }}>
+            <div>
+              <label style={labelStyle}>From snapshot</label>
+              <select value={fromSnapshot} onChange={(event) => setFromSnapshot(event.target.value)} style={inputStyle}>
+                {snapshots.map((date) => <option key={date} value={date}>{date}</option>)}
+              </select>
+            </div>
+            <div>
+              <label style={labelStyle}>To snapshot</label>
+              <select value={toSnapshot} onChange={(event) => setToSnapshot(event.target.value)} style={inputStyle}>
+                {snapshots.map((date) => <option key={date} value={date}>{date}</option>)}
+              </select>
+            </div>
+          </div>
+          <div style={{ marginBottom: 16 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap", marginBottom: 8 }}>
+              <div>
+                <div style={labelStyle}>Markets / metros</div>
+                <div style={{ color: shell.muted, fontSize: 13 }}>
+                  Select one or more metros for this change comparison.
+                </div>
+              </div>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                <button type="button" onClick={() => setDiffMetros(metros.map((metro) => metro.key))} style={buttonStyle}>
+                  Select all markets
+                </button>
+                <button type="button" onClick={() => setDiffMetros([])} style={buttonStyle}>
+                  Clear markets
+                </button>
+              </div>
+            </div>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              {metros.map((metro, index) => (
+                <button
+                  key={metro.key}
+                  type="button"
+                  onClick={() => toggleDiffMetro(metro.key)}
+                  style={pillStyle(diffMetros.includes(metro.key), SERIES_COLORS[index % SERIES_COLORS.length])}
+                >
+                  {metro.key}
+                </button>
+              ))}
+            </div>
+            {diffMetros.length === 0 && (
+              <div style={{ color: "#fecaca", marginTop: 8, fontSize: 13 }}>
+                Select at least one metro to build market changes.
+              </div>
+            )}
           </div>
           <div
             style={{
@@ -996,7 +1043,7 @@ export default function TrendsPage() {
                   const isPositive = row.capacityChange >= 0;
                   return (
                     <div
-                      key={`${row.networkId}-${row.capacityChange}`}
+                      key={`${row.metro}-${row.networkId}-${row.capacityChange}`}
                       style={{
                         display: "grid",
                         gridTemplateColumns: "minmax(180px, 280px) minmax(280px, 1fr) 110px",
@@ -1005,7 +1052,7 @@ export default function TrendsPage() {
                       }}
                     >
                       <div style={{ color: shell.soft, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                        {row.networkName || `AS${row.asn || row.networkId}`}
+                        {diffMetros.length > 1 ? `${row.metro} · ` : ""}{row.networkName || `AS${row.asn || row.networkId}`}
                       </div>
                       <div
                         style={{
@@ -1063,7 +1110,7 @@ export default function TrendsPage() {
             >
               <div style={{ fontWeight: 800, marginBottom: 4 }}>IX change heat map</div>
               <div style={{ color: shell.muted, fontSize: 13, marginBottom: 12 }}>
-                Rows are changed networks. Columns are IXs in {diffMetro}. Cells show where capacity moved.
+                Rows are changed network/metro pairs. Columns are IXs. Cells show where capacity moved.
               </div>
               <div style={{ overflowX: "auto" }}>
                 <div
@@ -1083,13 +1130,13 @@ export default function TrendsPage() {
                     </div>
                   ))}
                   {diffHeatmap.networks.map((row) => {
-                    const ixByName = new Map(row.ixChanges.map((ix) => [ix.ixName, ix]));
+                    const ixByName = new Map(row.ixChanges.map((ix) => [ix.ixLabel, ix]));
                     return (
-                      <React.Fragment key={`heat-${row.networkId}`}>
+                      <React.Fragment key={`heat-${row.metro}-${row.networkId}`}>
                         <div style={heatmapNetworkCellStyle}>
                           <strong>{row.networkName || `AS${row.asn || row.networkId}`}</strong>
                           <span style={{ color: shell.muted, fontSize: 12 }}>
-                            {row.asn ? `AS${row.asn}` : `ID ${row.networkId}`}
+                            {row.metro} · {row.asn ? `AS${row.asn}` : `ID ${row.networkId}`}
                           </span>
                         </div>
                         {diffHeatmap.ixNames.map((ixName) => {
@@ -1104,7 +1151,7 @@ export default function TrendsPage() {
                                 : "#07101d";
                           return (
                             <div
-                              key={`${row.networkId}-${ixName}`}
+                              key={`${row.metro}-${row.networkId}-${ixName}`}
                               style={{
                                 padding: "10px 8px",
                                 borderBottom: `1px solid ${shell.grid}`,
@@ -1138,8 +1185,9 @@ export default function TrendsPage() {
             </div>
           )}
           <DataTable
-            headers={["ASN", "Network", "Change", "Capacity before", "Capacity after", "Delta", "IX movement", "DC before", "DC after"]}
+            headers={["Metro", "ASN", "Network", "Change", "Capacity before", "Capacity after", "Delta", "IX movement", "DC before", "DC after"]}
             rows={filteredDiffRows.map((row) => [
+              row.metro,
               row.asn ? `AS${row.asn}` : "",
               row.networkName,
               row.status,
@@ -1382,47 +1430,49 @@ export default function TrendsPage() {
                   </div>
                 )}
               </div>
-              <div style={{ marginTop: 16 }}>
-                <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
-                  <div>
-                    <div style={labelStyle}>Metros</div>
-                    <div style={{ color: shell.muted, fontSize: 13, marginBottom: 8 }}>
-                      {activeView === "network"
-                        ? "Optional comparison filter for the network trend. The IX drill-down has its own metro selector."
-                        : "Optional filter for overview and rankings. Leave blank to show all APAC metros."}
+              {activeView !== "diff" && (
+                <div style={{ marginTop: 16 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+                    <div>
+                      <div style={labelStyle}>Metros</div>
+                      <div style={{ color: shell.muted, fontSize: 13, marginBottom: 8 }}>
+                        {activeView === "network"
+                          ? "Optional comparison filter for the network trend. The IX drill-down has its own metro selector."
+                          : "Optional filter for overview and rankings. Leave blank to show all APAC metros."}
+                      </div>
+                    </div>
+                    <div style={{ display: "flex", gap: 8, alignItems: "flex-start", flexWrap: "wrap" }}>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedMetros(metros.map((metro) => metro.key))}
+                        style={buttonStyle}
+                      >
+                        Select all metros
+                      </button>
+                      <button type="button" onClick={() => setSelectedMetros([])} style={buttonStyle}>
+                        Deselect all
+                      </button>
                     </div>
                   </div>
-                  <div style={{ display: "flex", gap: 8, alignItems: "flex-start", flexWrap: "wrap" }}>
-                    <button
-                      type="button"
-                      onClick={() => setSelectedMetros(metros.map((metro) => metro.key))}
-                      style={buttonStyle}
-                    >
-                      Select all metros
-                    </button>
-                    <button type="button" onClick={() => setSelectedMetros([])} style={buttonStyle}>
-                      Deselect all
-                    </button>
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                    {metros.map((metro, index) => (
+                      <button
+                        key={metro.key}
+                        type="button"
+                        onClick={() => toggleMetro(metro.key)}
+                        style={pillStyle(visibleMetros.includes(metro.key), SERIES_COLORS[index % SERIES_COLORS.length])}
+                      >
+                        {metro.key}
+                      </button>
+                    ))}
                   </div>
+                  {selectedMetros.length === 0 && activeView !== "network" && (
+                    <div style={{ color: shell.muted, marginTop: 8, fontSize: 13 }}>
+                      No metro filter selected, so this view is showing all APAC metros.
+                    </div>
+                  )}
                 </div>
-                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                  {metros.map((metro, index) => (
-                    <button
-                      key={metro.key}
-                      type="button"
-                      onClick={() => toggleMetro(metro.key)}
-                      style={pillStyle(visibleMetros.includes(metro.key), SERIES_COLORS[index % SERIES_COLORS.length])}
-                    >
-                      {metro.key}
-                    </button>
-                  ))}
-                </div>
-                {selectedMetros.length === 0 && activeView !== "network" && (
-                  <div style={{ color: shell.muted, marginTop: 8, fontSize: 13 }}>
-                    No metro filter selected, so this view is showing all APAC metros.
-                  </div>
-                )}
-              </div>
+              )}
               <div style={{ color: shell.muted, marginTop: 12, fontSize: 13 }}>
                 Snapshots loaded: {snapshots.join(" · ") || "none"}
               </div>
