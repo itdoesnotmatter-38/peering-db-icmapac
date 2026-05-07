@@ -118,8 +118,13 @@ const validateEnv = () => {
   if (!process.env.PEERINGDB_API_KEY) {
     throw new Error("Missing PEERINGDB_API_KEY");
   }
-  if (!process.env.POSTGRES_URL) {
-    throw new Error("Missing POSTGRES_URL");
+  if (
+    !process.env.POSTGRES_URL &&
+    !process.env.POSTGRES_PRISMA_URL &&
+    !process.env.DATABASE_URL &&
+    !process.env.DATABASE_URL_UNPOOLED
+  ) {
+    throw new Error("Missing Postgres connection string");
   }
   if (!process.env.BLOB_READ_WRITE_TOKEN) {
     throw new Error("Missing BLOB_READ_WRITE_TOKEN");

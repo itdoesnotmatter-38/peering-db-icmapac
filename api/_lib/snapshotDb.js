@@ -1,7 +1,22 @@
 const { Pool } = require('pg');
 
+const getPostgresUrl = () =>
+  process.env.POSTGRES_URL ||
+  process.env.POSTGRES_PRISMA_URL ||
+  process.env.DATABASE_URL ||
+  process.env.DATABASE_URL_UNPOOLED ||
+  "";
+
+const connectionString = getPostgresUrl();
+
+if (!connectionString) {
+  throw new Error(
+    "Missing Postgres connection string. Set POSTGRES_URL, POSTGRES_PRISMA_URL, DATABASE_URL, or DATABASE_URL_UNPOOLED."
+  );
+}
+
 const pool = new Pool({
-  connectionString: process.env.POSTGRES_URL,
+  connectionString,
 });
 
 const ensureSchema = async () => {
