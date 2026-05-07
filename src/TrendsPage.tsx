@@ -143,6 +143,40 @@ const formatMetric = (value: number, format: "capacity" | "count") =>
 
 const safeValue = (value: number) => (Number.isFinite(value) ? value : 0);
 
+const IX_LOGO_DOMAINS: Array<{ pattern: RegExp; domain: string }> = [
+  { pattern: /\bsgix\b/i, domain: "sgix.sg" },
+  { pattern: /\bhkix\b/i, domain: "hkix.net" },
+  { pattern: /\bmyix\b/i, domain: "myix.my" },
+  { pattern: /\bjpn?ap\b/i, domain: "jpnap.net" },
+  { pattern: /\bjpix\b/i, domain: "jpix.ad.jp" },
+  { pattern: /\bbbix\b/i, domain: "bbix.net" },
+  { pattern: /\bequinix\b/i, domain: "equinix.com" },
+  { pattern: /\bde-cix\b/i, domain: "de-cix.net" },
+  { pattern: /\bams-ix\b/i, domain: "ams-ix.net" },
+  { pattern: /\blinx\b/i, domain: "linx.net" },
+  { pattern: /\bfrance-ix\b/i, domain: "franceix.net" },
+  { pattern: /\bmegaport\b|\bmegaix\b/i, domain: "megaport.com" },
+  { pattern: /\bix australia\b|\bwa-ix\b|\bnsw-ix\b|\bvic-ix\b|\bqld-ix\b/i, domain: "internet.asn.au" },
+  { pattern: /\bkinx\b/i, domain: "kinx.net" },
+  { pattern: /\bkr-?ix\b/i, domain: "kisa.or.kr" },
+  { pattern: /\bchennai-ix\b|\bmumbai-ix\b|\bextreme ix\b/i, domain: "extreme-ix.org" },
+  { pattern: /\bgoogle\b/i, domain: "google.com" },
+];
+
+const getIxLogoDomain = (ixName: string) =>
+  IX_LOGO_DOMAINS.find((entry) => entry.pattern.test(ixName || ""))?.domain || "";
+
+const getIxInitials = (ixName: string) => {
+  const words = String(ixName || "IX")
+    .replace(/[()]/g, " ")
+    .split(/[\s/-]+/)
+    .filter(Boolean);
+  return words
+    .slice(0, 2)
+    .map((word) => word[0]?.toUpperCase())
+    .join("") || "IX";
+};
+
 const buildCsv = (rows: Array<Array<string | number | null>>) =>
   rows
     .map((row) =>
@@ -253,7 +287,7 @@ function HorizontalMetricBars({
   valueFormatter,
   accent = "#38bdf8",
 }: {
-  rows: Array<{ key: string; label: string; sublabel?: string; value: number }>;
+  rows: Array<{ key: string; label: React.ReactNode; title?: string; sublabel?: string; value: number }>;
   valueFormatter: (value: number) => string;
   accent?: string;
 }) {
@@ -269,7 +303,7 @@ function HorizontalMetricBars({
             <div key={row.key}>
               <div style={{ display: "flex", justifyContent: "space-between", gap: 12, marginBottom: 5 }}>
                 <div style={{ minWidth: 0 }}>
-                  <div style={{ color: shell.text, fontWeight: 800, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                  <div style={{ color: shell.text, fontWeight: 800, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", display: "flex", alignItems: "center", gap: 8 }}>
                     {row.label}
                   </div>
                   {row.sublabel && <div style={{ color: shell.muted, fontSize: 12 }}>{row.sublabel}</div>}
@@ -284,7 +318,7 @@ function HorizontalMetricBars({
                     borderRadius: 999,
                     background: `linear-gradient(90deg, ${accent}, #22c55e)`,
                   }}
-                  title={`${row.label}: ${valueFormatter(row.value)}`}
+                  title={`${row.title || "Row"}: ${valueFormatter(row.value)}`}
                 />
               </div>
             </div>
@@ -292,6 +326,89 @@ function HorizontalMetricBars({
         })
       )}
     </div>
+  );
+}
+
+function IxLogo({ ixName, size = 24 }: { ixName: string; size?: number }) {
+  const domain = getIxLogoDomain(ixName);
+  const initials = getIxInitials(ixName);
+  const [failed, setFailed] = useState(false);
+
+  if (!domain || failed) {
+    return (
+      <span
+        title={domain ? `${ixName} logo unavailable, showing initials` : `No logo mapping yet for ${ixName}`}
+        style={{
+          width: size,
+          height: size,
+          borderRadius: 8,
+          display: "inline-flex",
+          alignItems: "center",
+          justifyContent: "center",
+          background: "#102033",
+          border: `1px solid ${shell.border}`,
+          color: shell.soft,
+          fontSize: Math.max(9, Math.round(size * 0.38)),
+          fontWeight: 900,
+          flex: "0 0 auto",
+        }}
+      >
+        {initials}
+      </span>
+    );
+  }
+
+  return (
+    <span
+      title={`${ixName} · logo sourced from favicon for ${domain}`}
+      style={{
+        width: size,
+        height: size,
+        borderRadius: 8,
+        display: "inline-flex",
+        alignItems: "center",
+        justifyContent: "center",
+        background: "#f8fafc",
+        border: `1px solid ${shell.border}`,
+        overflow: "hidden",
+        flex: "0 0 auto",
+      }}
+    >
+      <img
+        src={`https://www.google.com/s2/favicons?domain=${encodeURIComponent(domain)}&sz=64`}
+        alt=""
+        width={Math.max(14, size - 6)}
+        height={Math.max(14, size - 6)}
+        onError={() => setFailed(true)}
+        style={{ display: "block" }}
+      />
+    </span>
+  );
+}
+
+function IxName({ ixName, size = 22 }: { ixName: string; size?: number }) {
+  return (
+    <span style={{ display: "inline-flex", alignItems: "center", gap: 8, minWidth: 0 }}>
+      <IxLogo ixName={ixName} size={size} />
+      <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{ixName}</span>
+    </span>
+  );
+}
+
+function IxChangeList({ changes }: { changes: Array<{ ixName: string; change: number }> }) {
+  if (changes.length === 0) return <>No IX capacity change</>;
+  return (
+    <span style={{ display: "inline-flex", flexWrap: "wrap", gap: 8 }}>
+      {changes.slice(0, 4).map((ix) => (
+        <span key={`${ix.ixName}-${ix.change}`} style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
+          <IxLogo ixName={ix.ixName} size={18} />
+          <span>
+            {ix.ixName} {formatCapacityDelta(ix.change)}
+          </span>
+        </span>
+      ))}
+      {changes.length > 4 && <span>+{changes.length - 4} more</span>}
+    </span>
   );
 }
 
@@ -873,7 +990,7 @@ export default function TrendsPage() {
                       <DataTable
                         headers={["IX", "Start capacity", "End capacity", "Change", "% change"]}
                         rows={selectedNetworkMetroIxChanges.map((row) => [
-                          row.ixName,
+                          <IxName ixName={row.ixName} />,
                           formatCapacity(row.before),
                           formatCapacity(row.after),
                           formatCapacityDelta(row.change),
@@ -894,7 +1011,8 @@ export default function TrendsPage() {
                       />
                       <div style={{ display: "flex", gap: 12, flexWrap: "wrap", color: shell.muted, fontSize: 13 }}>
                         {selectedNetworkMetroIxLatest.map((segment) => (
-                          <span key={segment.key}>
+                          <span key={segment.key} style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                            <IxLogo ixName={segment.label} size={20} />
                             <span style={{ color: segment.color }}>■</span> {segment.label}: {formatCapacity(segment.value)}
                           </span>
                         ))}
@@ -919,7 +1037,8 @@ export default function TrendsPage() {
                     <StackedBar segments={metro.segments} total={metro.total} />
                     <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginTop: 8, color: shell.muted, fontSize: 13 }}>
                       {metro.segments.map((segment) => (
-                        <span key={segment.key}>
+                        <span key={segment.key} style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                          <IxLogo ixName={segment.label} size={20} />
                           <span style={{ color: segment.color }}>■</span> {segment.label}: {formatCapacity(segment.value)}
                         </span>
                       ))}
@@ -1126,7 +1245,7 @@ export default function TrendsPage() {
                   <div style={heatmapHeaderCellStyle}>Network</div>
                   {diffHeatmap.ixNames.map((ixName) => (
                     <div key={ixName} style={heatmapHeaderCellStyle} title={ixName}>
-                      {ixName}
+                      <IxName ixName={ixName.includes(" · ") ? ixName.split(" · ").slice(1).join(" · ") : ixName} size={18} />
                     </div>
                   ))}
                   {diffHeatmap.networks.map((row) => {
@@ -1194,12 +1313,7 @@ export default function TrendsPage() {
               formatCapacity(row.beforeCapacity),
               formatCapacity(row.afterCapacity),
               formatCapacityDelta(row.capacityChange),
-              row.ixChanges.length > 0
-                ? row.ixChanges
-                    .slice(0, 4)
-                    .map((ix) => `${ix.ixName} ${formatCapacityDelta(ix.change)}`)
-                    .join(" | ") + (row.ixChanges.length > 4 ? ` | +${row.ixChanges.length - 4} more` : "")
-                : "No IX capacity change",
+              <IxChangeList changes={row.ixChanges} />,
               row.beforeFacilities,
               row.afterFacilities,
             ])}
@@ -1228,7 +1342,8 @@ export default function TrendsPage() {
             <HorizontalMetricBars
               rows={ixRankings.slice(0, 12).map((row) => ({
                 key: `${row.metro}-${row.ixId}`,
-                label: row.ixName,
+                label: <IxName ixName={row.ixName} />,
+                title: row.ixName,
                 sublabel: `${row.metro} · ${formatCount(row.networkCount)} networks`,
                 value: row.capacityMbps,
               }))}
@@ -1238,7 +1353,12 @@ export default function TrendsPage() {
           </div>
           <DataTable
             headers={["Metro", "IX", "Capacity", "Networks"]}
-            rows={ixRankings.map((row) => [row.metro, row.ixName, formatCapacity(row.capacityMbps), row.networkCount])}
+            rows={ixRankings.map((row) => [
+              row.metro,
+              <IxName ixName={row.ixName} />,
+              formatCapacity(row.capacityMbps),
+              row.networkCount,
+            ])}
           />
         </section>
       );
@@ -1505,7 +1625,7 @@ export default function TrendsPage() {
   );
 }
 
-function DataTable({ headers, rows }: { headers: string[]; rows: Array<Array<string | number>> }) {
+function DataTable({ headers, rows }: { headers: string[]; rows: Array<Array<React.ReactNode>> }) {
   return (
     <div style={{ overflowX: "auto", border: `1px solid ${shell.border}`, borderRadius: 14 }}>
       <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 760 }}>
