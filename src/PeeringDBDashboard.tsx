@@ -451,6 +451,7 @@ const PeeringDBDashboard: React.FC = () => {
   const [selectedFacIds, setSelectedFacIds] = useState<number[]>([]);
   const [ixSearch, setIxSearch] = useState("");
   const [facSearch, setFacSearch] = useState("");
+  const [showMatrixColumnControls, setShowMatrixColumnControls] = useState(false);
 
   // Layout tweaks.
   const [nameColWidth, setNameColWidth] = useState<number>(DEFAULT_NAME_COL_WIDTH);
@@ -592,6 +593,14 @@ const PeeringDBDashboard: React.FC = () => {
     if (n.includes("safehouse")) return "SAFEHOUSE";
 
     return "Other / Unknown";
+  };
+
+  const isEquinixLabel = (value: string | undefined | null) =>
+    Boolean(value && value.toLowerCase().includes("equinix"));
+
+  const isEquinixFacility = (fac: any) => {
+    const orgName = fac?.org_id ? orgLookup[fac.org_id]?.name : "";
+    return isEquinixLabel(fac?.name) || isEquinixLabel(orgName) || classifyOrgFallback(fac?.name) === "Equinix";
   };
 
   // ---- Helper: chunk array ----
@@ -1542,10 +1551,8 @@ const PeeringDBDashboard: React.FC = () => {
   const ixColumnsSorted = [...ixData]
     .filter((ix) => typeof ix.id === "number")
     .sort((a, b) => {
-      const aName = (a.name || "").toLowerCase();
-      const bName = (b.name || "").toLowerCase();
-      const aEq = aName.includes("equinix");
-      const bEq = bName.includes("equinix");
+      const aEq = isEquinixLabel(a.name);
+      const bEq = isEquinixLabel(b.name);
       if (aEq && !bEq) return -1;
       if (!aEq && bEq) return 1;
       const aCount = ixCounts.get(a.id) ?? 0;
@@ -1572,8 +1579,7 @@ const PeeringDBDashboard: React.FC = () => {
     let colorIndex = 0;
 
     ixColumnsSorted.forEach((ix) => {
-      const name = (ix.name || "").toLowerCase();
-      if (name.includes("equinix")) {
+      if (isEquinixLabel(ix.name)) {
         map[ix.id] = "#ef4444";
       } else {
         map[ix.id] = palette[colorIndex % palette.length];
@@ -1627,10 +1633,8 @@ const PeeringDBDashboard: React.FC = () => {
 
   // Equinix org first, then by total networks.
   orgGroups.sort((a, b) => {
-    const aLower = a.org.toLowerCase();
-    const bLower = b.org.toLowerCase();
-    const aIsEquinix = aLower.includes("equinix");
-    const bIsEquinix = bLower.includes("equinix");
+    const aIsEquinix = isEquinixLabel(a.org);
+    const bIsEquinix = isEquinixLabel(b.org);
     if (aIsEquinix && !bIsEquinix) return -1;
     if (!aIsEquinix && bIsEquinix) return 1;
     return b.totalNetworks - a.totalNetworks;
@@ -4176,16 +4180,26 @@ const PeeringDBDashboard: React.FC = () => {
     .sort((a, b) => {
       const aName = (a.name || "").toLowerCase();
       const bName = (b.name || "").toLowerCase();
-      const aEq = aName.includes("equinix");
-      const bEq = bName.includes("equinix");
+      const aEq = isEquinixLabel(a.name);
+      const bEq = isEquinixLabel(b.name);
       if (aEq && !bEq) return -1;
       if (!aEq && bEq) return 1;
       return aName.localeCompare(bName);
     });
 
-  const facOptions = facData.filter((fac) =>
-    facSearchLower ? (fac.name || "").toLowerCase().includes(facSearchLower) : true
-  );
+  const facOptions = [...facData]
+    .filter((fac) =>
+      facSearchLower ? (fac.name || "").toLowerCase().includes(facSearchLower) : true
+    )
+    .sort((a, b) => {
+      const aEq = isEquinixFacility(a);
+      const bEq = isEquinixFacility(b);
+      if (aEq && !bEq) return -1;
+      if (!aEq && bEq) return 1;
+      const countDiff = (facNetworkCounts.get(b.id) ?? 0) - (facNetworkCounts.get(a.id) ?? 0);
+      if (countDiff !== 0) return countDiff;
+      return String(a.name || "").localeCompare(String(b.name || ""));
+    });
 
   // ---- render ----
   return (
@@ -7629,6 +7643,256 @@ const PeeringDBDashboard: React.FC = () => {
                 </div>
               </div>
             </>
+          )}
+
+          {activeView === "matrices" && metroNetworks.length > 0 && (
+            <div
+              style={{
+                padding: 14,
+                background: theme.cardBg,
+                borderRadius: 10,
+                border: `1px solid ${theme.cardBorder}`,
+                boxShadow: "0 10px 25px rgba(0,0,0,0.35)",
+              }}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  gap: 12,
+                  flexWrap: "wrap",
+                }}
+              >
+                <div>
+                  <div style={{ fontSize: 11, color: theme.textMuted, textTransform: "uppercase" }}>
+                    Matrix columns
+                  </div>
+                  <h3 style={{ margin: "2px 0 4px" }}>Choose IX / DC columns to show</h3>
+                  <div style={{ fontSize: 12, color: theme.textSecondary }}>
+                    Showing {formatCount(ixColumnsSorted.length)} of {formatCount(ixData.length)} IX columns and{" "}
+                    {formatCount(facColumnsFlat.length)} of {formatCount(facData.length)} DC columns. Equinix is pinned first.
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowMatrixColumnControls((prev) => !prev)}
+                  style={{
+                    border: `1px solid ${showMatrixColumnControls ? "#38bdf8" : theme.cardBorder}`,
+                    borderRadius: 9999,
+                    padding: "8px 14px",
+                    background: showMatrixColumnControls ? "#075985" : theme.pillBg,
+                    color: theme.textPrimary,
+                    cursor: "pointer",
+                    fontSize: 13,
+                    fontWeight: 800,
+                  }}
+                >
+                  {showMatrixColumnControls ? "Hide column picker" : "Pick IX / DC columns"}
+                </button>
+              </div>
+
+              {showMatrixColumnControls && (
+                <div
+                  style={{
+                    marginTop: 12,
+                    display: "grid",
+                    gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
+                    gap: 12,
+                  }}
+                >
+                  <div
+                    style={{
+                      padding: 12,
+                      borderRadius: 10,
+                      border: `1px solid ${theme.cardBorder}`,
+                      background: "#020617",
+                    }}
+                  >
+                    <div style={{ display: "flex", justifyContent: "space-between", gap: 8, marginBottom: 8 }}>
+                      <strong>IX columns</strong>
+                      <span style={{ color: theme.textMuted, fontSize: 12 }}>
+                        {formatCount(selectedIxIds.length)} selected
+                      </span>
+                    </div>
+                    <input
+                      style={{
+                        width: "100%",
+                        boxSizing: "border-box",
+                        padding: 8,
+                        background: theme.cardBg,
+                        border: `1px solid ${theme.cardBorder}`,
+                        borderRadius: 8,
+                        color: theme.textPrimary,
+                        marginBottom: 8,
+                      }}
+                      placeholder="Search IX name..."
+                      value={ixSearch}
+                      onChange={(e) => setIxSearch(e.target.value)}
+                    />
+                    <div style={{ display: "flex", gap: 6, marginBottom: 8, flexWrap: "wrap" }}>
+                      <button
+                        type="button"
+                        style={{ fontSize: 12, padding: "6px 10px", borderRadius: 9999 }}
+                        onClick={() =>
+                          setSelectedIxIds(
+                            ixData.map((ix) => ix.id).filter((id: any) => typeof id === "number")
+                          )
+                        }
+                      >
+                        Show all
+                      </button>
+                      <button
+                        type="button"
+                        style={{ fontSize: 12, padding: "6px 10px", borderRadius: 9999 }}
+                        onClick={() =>
+                          setSelectedIxIds(
+                            ixData
+                              .filter((ix) => isEquinixLabel(ix.name))
+                              .map((ix) => ix.id)
+                              .filter((id: any) => typeof id === "number")
+                          )
+                        }
+                      >
+                        Equinix only
+                      </button>
+                      <button
+                        type="button"
+                        style={{ fontSize: 12, padding: "6px 10px", borderRadius: 9999 }}
+                        onClick={() => setSelectedIxIds([])}
+                      >
+                        Hide all
+                      </button>
+                    </div>
+                    <div
+                      style={{
+                        maxHeight: 220,
+                        overflowY: "auto",
+                        border: `1px solid ${theme.cardBorder}`,
+                        borderRadius: 8,
+                        padding: 8,
+                        background: theme.cardBg,
+                      }}
+                    >
+                      {ixOptions.map((ix) => (
+                        <label
+                          key={`matrix-ix-picker-${ix.id}`}
+                          style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, marginBottom: 5 }}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={selectedIxIds.includes(ix.id)}
+                            onChange={() => toggleIxSelection(ix.id)}
+                            style={{ accentColor: "#22c55e" }}
+                          />
+                          <span style={{ color: isEquinixLabel(ix.name) ? "#fecaca" : theme.textSecondary }}>
+                            {ix.name}
+                          </span>
+                        </label>
+                      ))}
+                      {ixOptions.length === 0 && (
+                        <div style={{ fontSize: 12, color: theme.textMuted }}>No IX match.</div>
+                      )}
+                    </div>
+                  </div>
+
+                  <div
+                    style={{
+                      padding: 12,
+                      borderRadius: 10,
+                      border: `1px solid ${theme.cardBorder}`,
+                      background: "#020617",
+                    }}
+                  >
+                    <div style={{ display: "flex", justifyContent: "space-between", gap: 8, marginBottom: 8 }}>
+                      <strong>Facility / DC columns</strong>
+                      <span style={{ color: theme.textMuted, fontSize: 12 }}>
+                        {formatCount(selectedFacIds.length)} selected
+                      </span>
+                    </div>
+                    <input
+                      style={{
+                        width: "100%",
+                        boxSizing: "border-box",
+                        padding: 8,
+                        background: theme.cardBg,
+                        border: `1px solid ${theme.cardBorder}`,
+                        borderRadius: 8,
+                        color: theme.textPrimary,
+                        marginBottom: 8,
+                      }}
+                      placeholder="Search DC / facility name..."
+                      value={facSearch}
+                      onChange={(e) => setFacSearch(e.target.value)}
+                    />
+                    <div style={{ display: "flex", gap: 6, marginBottom: 8, flexWrap: "wrap" }}>
+                      <button
+                        type="button"
+                        style={{ fontSize: 12, padding: "6px 10px", borderRadius: 9999 }}
+                        onClick={() =>
+                          setSelectedFacIds(
+                            facData.map((fac) => fac.id).filter((id: any) => typeof id === "number")
+                          )
+                        }
+                      >
+                        Show all
+                      </button>
+                      <button
+                        type="button"
+                        style={{ fontSize: 12, padding: "6px 10px", borderRadius: 9999 }}
+                        onClick={() =>
+                          setSelectedFacIds(
+                            facData
+                              .filter((fac) => isEquinixFacility(fac))
+                              .map((fac) => fac.id)
+                              .filter((id: any) => typeof id === "number")
+                          )
+                        }
+                      >
+                        Equinix only
+                      </button>
+                      <button
+                        type="button"
+                        style={{ fontSize: 12, padding: "6px 10px", borderRadius: 9999 }}
+                        onClick={() => setSelectedFacIds([])}
+                      >
+                        Hide all
+                      </button>
+                    </div>
+                    <div
+                      style={{
+                        maxHeight: 220,
+                        overflowY: "auto",
+                        border: `1px solid ${theme.cardBorder}`,
+                        borderRadius: 8,
+                        padding: 8,
+                        background: theme.cardBg,
+                      }}
+                    >
+                      {facOptions.map((fac) => (
+                        <label
+                          key={`matrix-fac-picker-${fac.id}`}
+                          style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, marginBottom: 5 }}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={selectedFacIds.includes(fac.id)}
+                            onChange={() => toggleFacSelection(fac.id)}
+                            style={{ accentColor: "#22c55e" }}
+                          />
+                          <span style={{ color: isEquinixFacility(fac) ? "#fecaca" : theme.textSecondary }}>
+                            {fac.name}
+                          </span>
+                        </label>
+                      ))}
+                      {facOptions.length === 0 && (
+                        <div style={{ fontSize: 12, color: theme.textMuted }}>No facility match.</div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
           )}
 
           {/* SECTION 1 – ASN × IX matrix */}
