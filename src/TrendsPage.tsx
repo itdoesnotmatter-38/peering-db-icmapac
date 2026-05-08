@@ -143,6 +143,11 @@ const formatMetric = (value: number, format: "capacity" | "count") =>
 
 const safeValue = (value: number) => (Number.isFinite(value) ? value : 0);
 
+const displayIxLabel = (ixLabel: string) =>
+  ixLabel.includes(" · ") ? ixLabel.split(" · ").slice(1).join(" · ") : ixLabel;
+
+const isEquinixIxLabel = (ixLabel: string) => /\bequinix\b/i.test(displayIxLabel(ixLabel || ""));
+
 const IX_LOGO_DOMAINS: Array<{ pattern: RegExp; domain: string }> = [
   { pattern: /\bsgix\b/i, domain: "sgix.sg" },
   { pattern: /\bhkix\b/i, domain: "hkix.net" },
@@ -428,6 +433,7 @@ export default function TrendsPage() {
   const [toSnapshot, setToSnapshot] = useState("");
   const [diffMetros, setDiffMetros] = useState<string[]>([]);
   const [diffFilter, setDiffFilter] = useState<DiffFilter>("all");
+  const [selectedDiffIxLabels, setSelectedDiffIxLabels] = useState<string[]>([]);
 
   useEffect(() => {
     const loadTrends = async () => {
@@ -817,17 +823,52 @@ export default function TrendsPage() {
   );
   const maxDiffAbs = Math.max(1, ...diffChartRows.map((row) => Math.abs(row.capacityChange)));
 
+  const diffIxOptions = useMemo(() => {
+    const optionMap = new Map<string, { ixLabel: string; count: number; absChange: number }>();
+    filteredDiffRows.forEach((row) => {
+      row.ixChanges.forEach((ix) => {
+        const existing = optionMap.get(ix.ixLabel) || { ixLabel: ix.ixLabel, count: 0, absChange: 0 };
+        existing.count += 1;
+        existing.absChange += Math.abs(ix.change);
+        optionMap.set(ix.ixLabel, existing);
+      });
+    });
+    return Array.from(optionMap.values()).sort((a, b) => {
+      const aEquinix = isEquinixIxLabel(a.ixLabel);
+      const bEquinix = isEquinixIxLabel(b.ixLabel);
+      if (aEquinix && !bEquinix) return -1;
+      if (!aEquinix && bEquinix) return 1;
+      if (b.count !== a.count) return b.count - a.count;
+      if (b.absChange !== a.absChange) return b.absChange - a.absChange;
+      return a.ixLabel.localeCompare(b.ixLabel);
+    });
+  }, [filteredDiffRows]);
+
+  const defaultDiffIxLabels = useMemo(
+    () => diffIxOptions.slice(0, Math.min(8, diffIxOptions.length)).map((option) => option.ixLabel),
+    [diffIxOptions]
+  );
+
+  const activeDiffIxLabels = selectedDiffIxLabels.length > 0 ? selectedDiffIxLabels : defaultDiffIxLabels;
+
   const diffHeatmap = useMemo(() => {
-    const networks = filteredDiffRows.filter((row) => row.ixChanges.length > 0).slice(0, 18);
-    const ixNames = Array.from(
-      new Set(networks.flatMap((row) => row.ixChanges.map((ix) => ix.ixLabel)))
-    ).sort((a, b) => a.localeCompare(b));
+    const activeSet = new Set(activeDiffIxLabels);
+    const networks = filteredDiffRows
+      .map((row) => ({
+        ...row,
+        ixChanges: row.ixChanges.filter((ix) => activeSet.has(ix.ixLabel)),
+      }))
+      .filter((row) => row.ixChanges.length > 0)
+      .slice(0, 18);
+    const ixNames = activeDiffIxLabels.filter((ixName) =>
+      networks.some((row) => row.ixChanges.some((ix) => ix.ixLabel === ixName))
+    );
     const maxAbs = Math.max(
       1,
       ...networks.flatMap((row) => row.ixChanges.map((ix) => Math.abs(ix.change)))
     );
     return { networks, ixNames, maxAbs };
-  }, [filteredDiffRows]);
+  }, [activeDiffIxLabels, filteredDiffRows]);
 
   const toggleMetro = (metro: string) => {
     setSelectedMetros((prev) => (prev.includes(metro) ? prev.filter((item) => item !== metro) : [...prev, metro]));
@@ -1229,7 +1270,66 @@ export default function TrendsPage() {
             >
               <div style={{ fontWeight: 800, marginBottom: 4 }}>IX change heat map</div>
               <div style={{ color: shell.muted, fontSize: 13, marginBottom: 12 }}>
-                Rows are changed network/metro pairs. Columns are IXs. Cells show where capacity moved.
+                Rows are changed network/metro pairs. Columns are selected IXs. Equinix is pinned first, then the most active IXs by change count.
+              </div>
+              <div
+                style={{
+                  border: `1px solid ${shell.border}`,
+                  borderRadius: 12,
+                  padding: 12,
+                  background: "#07101d",
+                  marginBottom: 12,
+                }}
+              >
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap", marginBottom: 10 }}>
+                  <div>
+                    <div style={{ fontWeight: 800 }}>Choose IX columns</div>
+                    <div style={{ color: shell.muted, fontSize: 13 }}>
+                      Showing {formatCount(diffHeatmap.ixNames.length)} of {formatCount(diffIxOptions.length)} changed IXs.
+                    </div>
+                  </div>
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                    <button type="button" style={buttonStyle} onClick={() => setSelectedDiffIxLabels(defaultDiffIxLabels)}>
+                      Most active
+                    </button>
+                    <button type="button" style={buttonStyle} onClick={() => setSelectedDiffIxLabels(diffIxOptions.map((option) => option.ixLabel))}>
+                      Select all IXs
+                    </button>
+                    <button type="button" style={buttonStyle} onClick={() => setSelectedDiffIxLabels([])}>
+                      Default view
+                    </button>
+                  </div>
+                </div>
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  {diffIxOptions.map((option, index) => {
+                    const active = activeDiffIxLabels.includes(option.ixLabel);
+                    const color = isEquinixIxLabel(option.ixLabel) ? "#ef4444" : SERIES_COLORS[index % SERIES_COLORS.length];
+                    return (
+                      <button
+                        key={`diff-ix-${option.ixLabel}`}
+                        type="button"
+                        onClick={() =>
+                          setSelectedDiffIxLabels((prev) => {
+                            const base = prev.length > 0 ? prev : defaultDiffIxLabels;
+                            return base.includes(option.ixLabel)
+                              ? base.filter((ixLabel) => ixLabel !== option.ixLabel)
+                              : [...base, option.ixLabel];
+                          })
+                        }
+                        style={pillStyle(active, color)}
+                        title={`${option.ixLabel}: ${formatCount(option.count)} changed network rows, ${formatCapacity(option.absChange)} absolute movement`}
+                      >
+                        <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                          <IxLogo ixName={displayIxLabel(option.ixLabel)} size={18} />
+                          {option.ixLabel}
+                          <span style={{ color: active ? "#e0f2fe" : shell.muted }}>
+                            {formatCount(option.count)}
+                          </span>
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
               <div style={{ overflowX: "auto" }}>
                 <div
@@ -1245,7 +1345,7 @@ export default function TrendsPage() {
                   <div style={heatmapHeaderCellStyle}>Network</div>
                   {diffHeatmap.ixNames.map((ixName) => (
                     <div key={ixName} style={heatmapHeaderCellStyle} title={ixName}>
-                      <IxName ixName={ixName.includes(" · ") ? ixName.split(" · ").slice(1).join(" · ") : ixName} size={18} />
+                      <IxName ixName={displayIxLabel(ixName)} size={18} />
                     </div>
                   ))}
                   {diffHeatmap.networks.map((row) => {
