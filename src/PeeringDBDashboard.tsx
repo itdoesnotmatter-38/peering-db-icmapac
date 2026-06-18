@@ -56,20 +56,60 @@ const theme = {
 type MetroRegion = "APAC" | "EMEA" | "AMER";
 
 const METROS = {
-  Singapore: { country: "SG", city: "Singapore", region: "APAC" as MetroRegion },
-  Jakarta: { country: "ID", city: "Jakarta", region: "APAC" as MetroRegion },
-  "Kuala Lumpur": { country: "MY", city: "Kuala Lumpur", region: "APAC" as MetroRegion },
-  Melbourne: { country: "AU", city: "Melbourne", region: "APAC" as MetroRegion },
-  Sydney: { country: "AU", city: "Sydney", region: "APAC" as MetroRegion },
-  Mumbai: { country: "IN", city: "Mumbai", region: "APAC" as MetroRegion },
-  "Hong Kong": { country: "HK", city: "Hong Kong", region: "APAC" as MetroRegion },
-  Bangkok: { country: "TH", city: "Bangkok", region: "APAC" as MetroRegion },
-  Manila: { country: "PH", city: "Manila", region: "APAC" as MetroRegion },
-  Chennai: { country: "IN", city: "Chennai", region: "APAC" as MetroRegion },
-  Seoul: { country: "KR", city: "Seoul", region: "APAC" as MetroRegion },
-  Tokyo: { country: "JP", city: "Tokyo", region: "APAC" as MetroRegion },
-  Osaka: { country: "JP", city: "Osaka", region: "APAC" as MetroRegion },
-  Perth: { country: "AU", city: "Perth", region: "APAC" as MetroRegion },
+  Singapore: { country: "SG", city: "Singapore", region: "APAC" as MetroRegion, facCountryOnly: true },
+  Jakarta: {
+    country: "ID",
+    city: "Jakarta",
+    region: "APAC" as MetroRegion,
+    facCityAliases: ["Jakarta Selatan", "Jakarta Pusat", "East Jakarta", "South Jakarta"],
+  },
+  "Kuala Lumpur": {
+    country: "MY",
+    city: "Kuala Lumpur",
+    region: "APAC" as MetroRegion,
+    facCityAliases: ["Cyberjaya", "Brickfields"],
+  },
+  Melbourne: {
+    country: "AU",
+    city: "Melbourne",
+    region: "APAC" as MetroRegion,
+    facCityAliases: ["Derrimut", "Port Melbourne", "North Melbourne", "Deer Park", "Brooklyn"],
+  },
+  Sydney: {
+    country: "AU",
+    city: "Sydney",
+    region: "APAC" as MetroRegion,
+    facCityAliases: ["Silverwater", "Unanderra", "Pyrmont", "Eastern Creek", "Erskine Park", "Artarmon"],
+  },
+  Mumbai: { country: "IN", city: "Mumbai", region: "APAC" as MetroRegion, facCityAliases: ["Navi Mumbai", "Navi Mumbai,"] },
+  "Hong Kong": { country: "HK", city: "Hong Kong", region: "APAC" as MetroRegion, facCountryOnly: true },
+  Bangkok: {
+    country: "TH",
+    city: "Bangkok",
+    region: "APAC" as MetroRegion,
+    facCityAliases: ["Chon Buri", "Sathorn, Bangkok", "Chatuchak"],
+  },
+  Manila: { country: "PH", city: "Manila", region: "APAC" as MetroRegion, facCityAliases: ["Binan Laguna"] },
+  Chennai: { country: "IN", city: "Chennai", region: "APAC" as MetroRegion, facCityAliases: ["Siruseri"] },
+  Seoul: {
+    country: "KR",
+    city: "Seoul",
+    region: "APAC" as MetroRegion,
+    facCityAliases: ["Mapo-gu", "Gangnam-gu", "Seongnam", "Incheon"],
+  },
+  Tokyo: {
+    country: "JP",
+    city: "Tokyo",
+    region: "APAC" as MetroRegion,
+    facCityAliases: ["Inzai-City", "Bunkyo-Ku", "Mitaka-shi", "Yokohama, Kanagawa,"],
+  },
+  Osaka: {
+    country: "JP",
+    city: "Osaka",
+    region: "APAC" as MetroRegion,
+    facCityAliases: ["Osaka-Shi Kita-Ku", "Ibaraki-city", "Minoo-shi", "Ibaraki-shi", "Minoo-shi, Osaka-Fu,"],
+  },
+  Perth: { country: "AU", city: "Perth", region: "APAC" as MetroRegion, facCityAliases: ["Shenton Park", "East Perth"] },
 
   London: { country: "GB", city: "London", region: "EMEA" as MetroRegion },
   Amsterdam: { country: "NL", city: "Amsterdam", region: "EMEA" as MetroRegion },
@@ -810,6 +850,49 @@ const PeeringDBDashboard: React.FC = () => {
         }));
       };
 
+      const fetchFacilityListForMetro = async (metro: MetroKey, attempts: number) => {
+        const cfg = METROS[metro];
+        const facCountryOnly = "facCountryOnly" in cfg && cfg.facCountryOnly;
+        const cityAliases = "facCityAliases" in cfg ? Array.from(cfg.facCityAliases) : [];
+
+        if (facCountryOnly) {
+          const { data } = await fetchPeeringDbWithRetry<any>(
+            "fac",
+            { country: cfg.country },
+            attempts,
+            { onThrottleWait: reportThrottleWait(`facility list for ${metro}`) }
+          );
+          return data || [];
+        }
+
+        const cities = Array.from(new Set([cfg.city, ...cityAliases]));
+        const merged = new Map<number, any>();
+
+        for (let cityIndex = 0; cityIndex < cities.length; cityIndex += 1) {
+          const city = cities[cityIndex];
+          if (cityIndex > 0) {
+            await sleep(REQUEST_GAP_MS);
+          }
+          const { data } = await fetchPeeringDbWithRetry<any>(
+            "fac",
+            { country: cfg.country, city },
+            attempts,
+            {
+              onThrottleWait: reportThrottleWait(
+                cityIndex === 0 ? `facility list for ${metro}` : `${metro} facility alias ${city}`
+              ),
+            }
+          );
+          (data || []).forEach((fac: any) => {
+            if (typeof fac?.id === "number") {
+              merged.set(fac.id, fac);
+            }
+          });
+        }
+
+        return Array.from(merged.values());
+      };
+
       const fetchNetfacRowsWithAdaptiveChunking = async (
         metro: MetroKey,
         facIdsChunk: number[],
@@ -896,10 +979,6 @@ const PeeringDBDashboard: React.FC = () => {
 
         const cfg = METROS[m];
         const ixParams = { country: cfg.country, city: cfg.city };
-        const facParams =
-          cfg.country === "HK" || cfg.country === "SG"
-            ? { country: cfg.country }
-            : { country: cfg.country, city: cfg.city };
 
         try {
           const ixResult = needsIx
@@ -910,11 +989,7 @@ const PeeringDBDashboard: React.FC = () => {
           if (needsIx && needsFac) {
             await sleep(REQUEST_GAP_MS);
           }
-          const facResult = needsFac
-            ? await fetchPeeringDbWithRetry<any>("fac", facParams, DEFAULT_FETCH_ATTEMPTS, {
-                onThrottleWait: reportThrottleWait(`facility list for ${m}`),
-              })
-            : { data: facList || [] };
+          const facResult = { data: needsFac ? await fetchFacilityListForMetro(m, DEFAULT_FETCH_ATTEMPTS) : facList || [] };
           workingIxCache[m] = ixResult.data || [];
           workingFacCache[m] = facResult.data || [];
           updateLoadProgress((prev) => ({

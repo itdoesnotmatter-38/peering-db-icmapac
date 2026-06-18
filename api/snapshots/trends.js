@@ -3,31 +3,55 @@ const zlib = require("zlib");
 const { ensureSchema, listRecentCompleteRuns } = require("../_lib/snapshotDb");
 
 const APAC_METROS = [
-  { key: "Singapore", city: "Singapore", country: "SG" },
-  { key: "Jakarta", city: "Jakarta", country: "ID" },
-  { key: "Kuala Lumpur", city: "Kuala Lumpur", country: "MY" },
-  { key: "Melbourne", city: "Melbourne", country: "AU" },
-  { key: "Sydney", city: "Sydney", country: "AU" },
-  { key: "Mumbai", city: "Mumbai", country: "IN" },
+  { key: "Singapore", city: "Singapore", country: "SG", countryWide: true },
+  {
+    key: "Jakarta",
+    city: "Jakarta",
+    country: "ID",
+    cityAliases: ["Jakarta Selatan", "Jakarta Pusat", "East Jakarta", "South Jakarta"],
+  },
+  { key: "Kuala Lumpur", city: "Kuala Lumpur", country: "MY", cityAliases: ["Cyberjaya", "Brickfields"] },
+  {
+    key: "Melbourne",
+    city: "Melbourne",
+    country: "AU",
+    cityAliases: ["Derrimut", "Port Melbourne", "North Melbourne", "Deer Park", "Brooklyn"],
+  },
+  {
+    key: "Sydney",
+    city: "Sydney",
+    country: "AU",
+    cityAliases: ["Silverwater", "Unanderra", "Pyrmont", "Eastern Creek", "Erskine Park", "Artarmon"],
+  },
+  { key: "Mumbai", city: "Mumbai", country: "IN", cityAliases: ["Navi Mumbai", "Navi Mumbai,"] },
   // PeeringDB facilities in the Hong Kong metro are often listed under
   // surrounding districts (Kwai Chung, Tsuen Wan, Sha Tin, etc.).
   { key: "Hong Kong", city: "Hong Kong", country: "HK", countryWide: true },
-  { key: "Bangkok", city: "Bangkok", country: "TH" },
-  { key: "Manila", city: "Manila", country: "PH" },
-  { key: "Chennai", city: "Chennai", country: "IN" },
-  { key: "Seoul", city: "Seoul", country: "KR" },
-  { key: "Tokyo", city: "Tokyo", country: "JP" },
-  { key: "Osaka", city: "Osaka", country: "JP" },
-  { key: "Perth", city: "Perth", country: "AU" },
+  { key: "Bangkok", city: "Bangkok", country: "TH", cityAliases: ["Chon Buri", "Sathorn, Bangkok", "Chatuchak"] },
+  { key: "Manila", city: "Manila", country: "PH", cityAliases: ["Binan Laguna"] },
+  { key: "Chennai", city: "Chennai", country: "IN", cityAliases: ["Siruseri"] },
+  { key: "Seoul", city: "Seoul", country: "KR", cityAliases: ["Mapo-gu", "Gangnam-gu", "Seongnam", "Incheon"] },
+  { key: "Tokyo", city: "Tokyo", country: "JP", cityAliases: ["Inzai-City", "Bunkyo-Ku", "Mitaka-shi", "Yokohama, Kanagawa,"] },
+  {
+    key: "Osaka",
+    city: "Osaka",
+    country: "JP",
+    cityAliases: ["Osaka-Shi Kita-Ku", "Ibaraki-city", "Minoo-shi", "Ibaraki-shi", "Minoo-shi, Osaka-Fu,"],
+  },
+  { key: "Perth", city: "Perth", country: "AU", cityAliases: ["Shenton Park", "East Perth"] },
 ];
+
+const normalizeCity = (value) => String(value || "").trim().toLowerCase();
 
 const metroKeyFor = (country, city) => {
   const normalizedCountry = String(country || "").trim().toUpperCase();
-  const normalizedCity = String(city || "").trim().toLowerCase();
+  const normalizedCity = normalizeCity(city);
   const metro = APAC_METROS.find(
     (entry) =>
       entry.country === normalizedCountry &&
-      (entry.countryWide || entry.city.toLowerCase() === normalizedCity)
+      (entry.countryWide ||
+        entry.city.toLowerCase() === normalizedCity ||
+        (entry.cityAliases || []).some((alias) => normalizeCity(alias) === normalizedCity))
   );
   return metro?.key || "";
 };
