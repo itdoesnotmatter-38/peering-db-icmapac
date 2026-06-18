@@ -9,7 +9,9 @@ const APAC_METROS = [
   { key: "Melbourne", city: "Melbourne", country: "AU" },
   { key: "Sydney", city: "Sydney", country: "AU" },
   { key: "Mumbai", city: "Mumbai", country: "IN" },
-  { key: "Hong Kong", city: "Hong Kong", country: "HK" },
+  // PeeringDB facilities in the Hong Kong metro are often listed under
+  // surrounding districts (Kwai Chung, Tsuen Wan, Sha Tin, etc.).
+  { key: "Hong Kong", city: "Hong Kong", country: "HK", countryWide: true },
   { key: "Bangkok", city: "Bangkok", country: "TH" },
   { key: "Manila", city: "Manila", country: "PH" },
   { key: "Chennai", city: "Chennai", country: "IN" },
@@ -23,7 +25,9 @@ const metroKeyFor = (country, city) => {
   const normalizedCountry = String(country || "").trim().toUpperCase();
   const normalizedCity = String(city || "").trim().toLowerCase();
   const metro = APAC_METROS.find(
-    (entry) => entry.country === normalizedCountry && entry.city.toLowerCase() === normalizedCity
+    (entry) =>
+      entry.country === normalizedCountry &&
+      (entry.countryWide || entry.city.toLowerCase() === normalizedCity)
   );
   return metro?.key || "";
 };
