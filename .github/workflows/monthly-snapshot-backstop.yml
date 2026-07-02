@@ -1,0 +1,62 @@
+name: Monthly Snapshot Backstop
+
+on:
+  schedule:
+    # Backstop after month-end in Singapore. If the month-end workflow failed or
+    # left an error row, this retries the previous month-end label.
+    - cron: "10 2 2 * *"
+  workflow_dispatch:
+    inputs:
+      snapshot_date:
+        description: "Optional backfill label in YYYY-MM-DD. Defaults to previous month-end in Singapore."
+        required: false
+        type: string
+
+concurrency:
+  group: peeringdb-snapshot-backstop
+  cancel-in-progress: false
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    env:
+      PEERINGDB_API_KEY: ${{ secrets.PEERINGDB_API_KEY }}
+      POSTGRES_URL: ${{ secrets.POSTGRES_URL }}
+      BLOB_READ_WRITE_TOKEN: ${{ secrets.BLOB_READ_WRITE_TOKEN }}
+      SNAPSHOT_TIMEZONE: Asia/Singapore
+      SNAPSHOT_BLOB_PREFIX: snapshots
+      SNAPSHOT_BLOB_ACCESS: public
+      SNAPSHOT_PAGE_LIMIT: "5000"
+      SNAPSHOT_MAX_PAGES: "5000"
+      SNAPSHOT_PAGE_DELAY_MS: "1000"
+      PEERINGDB_MAX_RETRIES: "600"
+      PEERINGDB_MAX_RETRY_TIME_MS: "3600000"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm install --no-fund --no-audit
+
+      - name: Resolve snapshot date
+        id: snapshot_date
+        env:
+          INPUT_SNAPSHOT_DATE: ${{ inputs.snapshot_date }}
+        run: |
+          if [ -n "$INPUT_SNAPSHOT_DATE" ]; then
+            SNAPSHOT_DATE="$INPUT_SNAPSHOT_DATE"
+          else
+            SNAPSHOT_DATE="$(TZ=Asia/Singapore date -d "$(TZ=Asia/Singapore date +%Y-%m-01) -1 day" +%F)"
+          fi
+          echo "snapshot_date=$SNAPSHOT_DATE" >> "$GITHUB_OUTPUT"
+          echo "Backstop snapshot date: $SNAPSHOT_DATE"
+
+      - name: Run backstop snapshot
+        run: npm run snapshot:run -- --snapshot-date=${{ steps.snapshot_date.outputs.snapshot_date }}
