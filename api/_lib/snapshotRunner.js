@@ -154,11 +154,20 @@ const runGlobalSnapshot = async ({ force = false, now = new Date(), config = {} 
 
   await ensureSchema();
   const existing = await getRun(snapshotDate);
-  if (existing && !force) {
+  if (existing?.status === "complete" && !force) {
     return {
       ok: true,
       skipped: true,
-      reason: "Snapshot already exists",
+      reason: "Snapshot already complete",
+      snapshotDate,
+      timezone: snapshotConfig.timezone,
+    };
+  }
+  if (existing?.status === "running" && !force) {
+    return {
+      ok: true,
+      skipped: true,
+      reason: "Snapshot already running",
       snapshotDate,
       timezone: snapshotConfig.timezone,
     };

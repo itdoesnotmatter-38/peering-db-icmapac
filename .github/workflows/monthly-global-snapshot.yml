@@ -2,7 +2,10 @@ name: Monthly Global PeeringDB Snapshot
 
 on:
   schedule:
-    - cron: "10 16 27-31 * *"
+    # GitHub cron is UTC. Multiple checks across dates 27-31 give the
+    # Singapore month-end day several safe retry windows; completed snapshots
+    # are skipped by the runner, while failed/error runs are retried.
+    - cron: "10 0,6,12,18 27-31 * *"
   workflow_dispatch:
     inputs:
       force:
