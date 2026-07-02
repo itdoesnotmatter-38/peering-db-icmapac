@@ -2,7 +2,7 @@ const BASE_URL = process.env.PEERINGDB_API_BASE_URL || "https://www.peeringdb.co
 const DEFAULT_LIMIT = 250;
 const MAX_RETRIES = Number.parseInt(process.env.PEERINGDB_MAX_RETRIES || "50", 10);
 const BASE_DELAY_MS = 500;
-const MAX_DELAY_MS = Number.parseInt(process.env.PEERINGDB_MAX_DELAY_MS || "30000", 10);
+const MAX_DELAY_MS = Number.parseInt(process.env.PEERINGDB_MAX_DELAY_MS || "120000", 10);
 const MAX_RETRY_TIME_MS = Number.parseInt(
   process.env.PEERINGDB_MAX_RETRY_TIME_MS || String(20 * 60 * 1000),
   10
@@ -57,10 +57,13 @@ const getErrorMessage = (body, fallback) => {
 
 const fetchWithRetry = async (url, options = {}) => {
   const startTime = Date.now();
+  const retryLabel = options.retryLabel || "PeeringDB request";
+  const fetchOptions = { ...options };
+  delete fetchOptions.retryLabel;
 
   for (let attempt = 0; ; attempt += 1) {
     try {
-      const resp = await fetch(url, options);
+      const resp = await fetch(url, fetchOptions);
       let body = null;
       if (!resp.ok) {
         body = await resp.json().catch(() => null);
@@ -73,9 +76,17 @@ const fetchWithRetry = async (url, options = {}) => {
       const delayMs = getRetryDelayMs(resp, body, attempt);
       const timedOut = Date.now() + delayMs - startTime > MAX_RETRY_TIME_MS;
       if (attempt >= MAX_RETRIES || timedOut) {
+        console.warn(
+          `${retryLabel} exhausted retries after ${attempt + 1} attempts; returning HTTP ${resp.status}.`
+        );
         return { resp, body };
       }
 
+      console.warn(
+        `${retryLabel} hit HTTP ${resp.status}; waiting ${Math.round(delayMs / 1000)}s before retry ${
+          attempt + 1
+        }.`
+      );
       await sleep(delayMs);
     } catch (err) {
       const delayMs = getRetryDelayMs(null, null, attempt);
@@ -83,6 +94,11 @@ const fetchWithRetry = async (url, options = {}) => {
       if (attempt >= MAX_RETRIES || timedOut) {
         throw err;
       }
+      console.warn(
+        `${retryLabel} failed with ${err?.message || "network error"}; waiting ${Math.round(
+          delayMs / 1000
+        )}s before retry ${attempt + 1}.`
+      );
       await sleep(delayMs);
     }
   }
@@ -106,7 +122,10 @@ const fetchAllPages = async ({
 
   while (true) {
     const url = buildUrl(obj, { ...params, limit, skip });
-    const { resp, body } = await fetchWithRetry(url, { headers });
+    const { resp, body } = await fetchWithRetry(url, {
+      headers,
+      retryLabel: `${obj} page ${page + 1} (skip=${skip})`,
+    });
 
     if (!resp.ok) {
       const message = getErrorMessage(body, `HTTP ${resp.status}`);

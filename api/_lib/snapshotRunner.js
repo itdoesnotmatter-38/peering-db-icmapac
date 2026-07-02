@@ -93,6 +93,7 @@ const fetchToGzipFile = async ({
 }) => {
   const { gzip, done } = await createGzipWriter(filePath);
   let rowCount = 0;
+  console.log(`Snapshot: starting ${obj} export.`);
 
   await fetchAllPages({
     obj,
@@ -101,16 +102,20 @@ const fetchToGzipFile = async ({
     limit,
     maxPages,
     pageDelayMs,
-    onPage: async (rows) => {
+    onPage: async (rows, pageInfo) => {
       rows.forEach((row) => {
         gzip.write(`${JSON.stringify(row)}\n`);
         rowCount += 1;
       });
+      console.log(
+        `Snapshot: ${obj} page ${pageInfo.page + 1} wrote ${rows.length} rows; total ${rowCount}.`
+      );
     },
   });
 
   gzip.end();
   await done;
+  console.log(`Snapshot: completed ${obj} export with ${rowCount} rows.`);
   return rowCount;
 };
 
@@ -185,6 +190,10 @@ const runGlobalSnapshot = async ({ force = false, now = new Date(), config = {} 
   await clearAggregates(snapshotDate);
 
   try {
+    console.log(`Snapshot: starting ${snapshotDate} (${snapshotConfig.timezone}).`);
+    console.log(
+      `Snapshot: pageLimit=${snapshotConfig.pageLimit}, pageDelayMs=${snapshotConfig.pageDelayMs}, maxPages=${snapshotConfig.maxPages}.`
+    );
     const tmpDir = "/tmp";
     const netPath = path.join(tmpDir, `pdb-net-${snapshotDate}.jsonl.gz`);
     const orgPath = path.join(tmpDir, `pdb-org-${snapshotDate}.jsonl.gz`);
@@ -202,6 +211,7 @@ const runGlobalSnapshot = async ({ force = false, now = new Date(), config = {} 
     const netRowsForCsv = [];
     let netCount = 0;
 
+    console.log("Snapshot: starting net export.");
     await fetchAllPages({
       obj: "net",
       params: {},
@@ -209,7 +219,7 @@ const runGlobalSnapshot = async ({ force = false, now = new Date(), config = {} 
       limit: snapshotConfig.pageLimit,
       maxPages: snapshotConfig.maxPages,
       pageDelayMs: snapshotConfig.pageDelayMs,
-      onPage: async (rows) => {
+      onPage: async (rows, pageInfo) => {
         rows.forEach((row) => {
           netGzip.write(`${JSON.stringify(row)}\n`);
           netCount += 1;
@@ -228,16 +238,21 @@ const runGlobalSnapshot = async ({ force = false, now = new Date(), config = {} 
             orgId: row.org_id || "",
           });
         });
+        console.log(
+          `Snapshot: net page ${pageInfo.page + 1} wrote ${rows.length} rows; total ${netCount}.`
+        );
       },
     });
 
     netGzip.end();
     await netDone;
+    console.log(`Snapshot: completed net export with ${netCount} rows.`);
 
     const countryCounts = new Map();
     const orgLookup = new Map();
     let orgCount = 0;
 
+    console.log("Snapshot: starting org export.");
     await fetchAllPages({
       obj: "org",
       params: {},
@@ -245,7 +260,7 @@ const runGlobalSnapshot = async ({ force = false, now = new Date(), config = {} 
       limit: snapshotConfig.pageLimit,
       maxPages: snapshotConfig.maxPages,
       pageDelayMs: snapshotConfig.pageDelayMs,
-      onPage: async (rows) => {
+      onPage: async (rows, pageInfo) => {
         rows.forEach((row) => {
           orgGzip.write(`${JSON.stringify(row)}\n`);
           orgCount += 1;
@@ -260,11 +275,15 @@ const runGlobalSnapshot = async ({ force = false, now = new Date(), config = {} 
             city: row.city || "",
           });
         });
+        console.log(
+          `Snapshot: org page ${pageInfo.page + 1} wrote ${rows.length} rows; total ${orgCount}.`
+        );
       },
     });
 
     orgGzip.end();
     await orgDone;
+    console.log(`Snapshot: completed org export with ${orgCount} rows.`);
 
     const blobPrefix = `${snapshotConfig.blobPrefixRoot}/${snapshotDate}`;
     const netUrl = await uploadFile(
@@ -422,6 +441,7 @@ const runGlobalSnapshot = async ({ force = false, now = new Date(), config = {} 
       networksCsvUrl,
     });
 
+    console.log(`Snapshot: completed ${snapshotDate}.`);
     return {
       ok: true,
       skipped: false,
@@ -432,6 +452,7 @@ const runGlobalSnapshot = async ({ force = false, now = new Date(), config = {} 
       blobPrefix,
     };
   } catch (err) {
+    console.error(`Snapshot: failed ${snapshotDate}: ${err?.stack || err?.message || err}`);
     await upsertRun({
       snapshotDate,
       status: "error",
