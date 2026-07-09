@@ -188,10 +188,9 @@ export default function DownloadsPage() {
           >
             <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 8 }}>Snapshot market exports</div>
             <div style={{ color: shell.muted, lineHeight: 1.5, marginBottom: 16 }}>
-              Generate country or region CSVs from a stored snapshot. `IX view` summarizes each
-              network's deployed capacity across all IXs in the selected market, while `facility view`
-              summarizes each network's presence across all facilities in that market. `Combined view`
-              puts both into one file for the selected market, with each IX row and each facility row kept separate.
+              Generate country or region CSVs from a stored snapshot. `IX view` is pivot-friendly:
+              one row per network per IX, with deployed capacity in its own column. `Facility view`
+              is one row per network per facility/DC. `Combined view` puts both record types into one file.
             </div>
 
             <label style={{ display: "block", fontSize: 13, color: shell.muted, marginBottom: 8 }}>
@@ -324,7 +323,7 @@ export default function DownloadsPage() {
                   fontWeight: 700,
                 }}
               >
-                Download IX view CSV
+                Download IX pivot CSV
               </a>
               <a
                 href={buildSnapshotScopedExportUrl(selectedSnapshotDate, exportScope, activeScopeCode, "facility")}
@@ -337,7 +336,7 @@ export default function DownloadsPage() {
                   fontWeight: 700,
                 }}
               >
-                Download facility view CSV
+                Download facility pivot CSV
               </a>
             </div>
             <div style={{ color: shell.muted, lineHeight: 1.5, marginTop: 12, fontSize: 13 }}>

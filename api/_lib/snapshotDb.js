@@ -239,7 +239,7 @@ const listRecentCompleteRuns = async (limit = 12) => {
     const result = await client.query(
       `
       SELECT
-        snapshot_date,
+        snapshot_date::text AS snapshot_date,
         started_at,
         completed_at,
         status,
