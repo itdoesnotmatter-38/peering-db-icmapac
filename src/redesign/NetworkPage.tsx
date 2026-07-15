@@ -5,10 +5,10 @@ import { useSnapshot } from "./Shell";
 import { Bar, Kpi, Panel, useTooltip } from "./bits";
 import { METRO_CODES, NetworkPort, facilityMeta, fmtMonth, loadWatchlist, networkProfile, saveWatchlist } from "./data";
 
-/* Network deep dive. Click a metro in the footprint to drill in: the
-   capacity-allocation stacked bar and the facility presence below both
-   follow the selected metro. Facility membership is fetched live from
-   PeeringDB (netfac) and labelled from the snapshot. */
+/* Network deep dive. The allocation & presence section renders ONE block
+   per scoped metro — stacked bar of that metro's IX allocation plus its
+   facilities — all visible at once, no clicking. Markets are never blended.
+   Clicking a footprint row just scrolls to that metro's block. */
 
 // categorical palette for stacked-bar segments (reads on light and dark)
 const SEG = ["#2BB0C4", "#4F86D6", "#3FB27F", "#E0A73C", "#D8617D", "#7C8AA0"];
@@ -36,20 +36,11 @@ export default function NetworkPage() {
   const facMeta = useMemo(() => facilityMeta(data), [data]);
   const [watched, setWatched] = useState<boolean>(() => loadWatchlist().includes(Number(asn)));
 
-  // default the selected metro to one in the global scope, so opening a
-  // The footprint honours the global scope, like every other page — pick a few
-  // metros up top and the list here narrows to them. If the network has no
-  // presence in the scoped metros, fall back to its full footprint with a note.
+  // footprint honours the global scope; fall back to full footprint if the
+  // network is absent from every scoped metro
   const inScopeFootprint = scope && scope.length ? p.footprint.filter((f) => scope.includes(f.metro)) : p.footprint;
   const scopeMismatch = Boolean(scope && scope.length && inScopeFootprint.length === 0);
   const visibleFootprint = inScopeFootprint.length ? inScopeFootprint : p.footprint;
-
-  // Selection for the allocation & presence section. `null` = aggregate across
-  // all metros in scope, so changing the top scope updates it with no click.
-  // With a single metro (or All-APAC) we default to the top metro as before.
-  const canAggregate = Boolean(scope && scope.length) && visibleFootprint.length > 1;
-  const defaultSel = () => (canAggregate ? null : visibleFootprint[0]?.metro || null);
-  const [sel, setSel] = useState<string | null>(() => defaultSel());
 
   // live facility membership (netfac) for this network
   const [facs, setFacs] = useState<{ loading: boolean; rows: FacRow[]; error: string | null }>({
@@ -57,11 +48,6 @@ export default function NetworkPage() {
     rows: [],
     error: null,
   });
-
-  useEffect(() => {
-    setSel(defaultSel());
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [p, scope]);
 
   useEffect(() => {
     if (!p.found || !p.netId) return;
@@ -98,41 +84,34 @@ export default function NetworkPage() {
     setWatched(next.includes(n));
   };
 
-  // metros feeding the allocation & presence view: one selected, or all in scope
-  const viewMetros = useMemo(
-    () => (sel ? [sel] : visibleFootprint.map((f) => f.metro)),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [sel, visibleFootprint.map((f) => f.metro).join("|")]
+  // one block per visible metro — bar segments + facility chips
+  const blocks = useMemo(
+    () =>
+      visibleFootprint.map((f) => {
+        const ports = p.ports.filter((x) => x.metro === f.metro).sort((a, b) => b.capG - a.capG);
+        const totalG = ports.reduce((a, x) => a + x.capG, 0);
+        const top = ports.slice(0, 5);
+        const rest = ports.slice(5);
+        const segments = top.map((x, i) => ({
+          label: x.ixName,
+          capG: x.capG,
+          color: segColor(x, i),
+          ixId: x.ixId,
+          eqx: x.isEquinix,
+        }));
+        if (rest.length)
+          segments.push({
+            label: `${rest.length} more`,
+            capG: rest.reduce((a, x) => a + x.capG, 0),
+            color: "#5b6b7d",
+            ixId: -1,
+            eqx: false,
+          });
+        return { f, totalG, segments };
+      }),
+    [visibleFootprint, p.ports]
   );
-  const viewLabel = sel ? sel : scopeName;
-  const viewMetroSet = new Set(viewMetros);
-
-  // ports across the view metros → stacked-bar segments (top 6 + "other")
-  const metroPorts = useMemo(
-    () => p.ports.filter((x) => viewMetroSet.has(x.metro)).sort((a, b) => b.capG - a.capG),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [p.ports, viewMetros.join("|")]
-  );
-  const metroTotalG = metroPorts.reduce((a, x) => a + x.capG, 0);
-  const segments = useMemo(() => {
-    const top = metroPorts.slice(0, 6);
-    const rest = metroPorts.slice(6);
-    const out = top.map((x, i) => ({
-      label: sel ? x.ixName : `${x.ixName} · ${x.metro}`,
-      capG: x.capG,
-      color: segColor(x, i),
-      ixId: x.ixId,
-      eqx: x.isEquinix,
-    }));
-    if (rest.length) out.push({ label: `${rest.length} more`, capG: rest.reduce((a, x) => a + x.capG, 0), color: "#5b6b7d", ixId: -1, eqx: false });
-    return out;
-  }, [metroPorts, sel]);
-
-  const metroFacs = useMemo(
-    () => facs.rows.filter((f) => f.metro && viewMetroSet.has(f.metro)).sort((a, b) => Number(b.isEquinix) - Number(a.isEquinix)),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [facs.rows, viewMetros.join("|")]
-  );
+  const totalScopedG = blocks.reduce((a, b) => a + b.totalG, 0);
 
   if (!p.found) {
     return (
@@ -150,6 +129,12 @@ export default function NetworkPage() {
   const prev = p.snapshots.length > 1 ? p.snapshots[p.snapshots.length - 2] : latest;
   const maxMetro = visibleFootprint[0]?.capT || 1;
 
+  const compareTo = (() => {
+    const n = new URLSearchParams(search);
+    n.set("nets", String(p.asn));
+    return { pathname: "/compare", search: `?${n.toString()}` };
+  })();
+
   return (
     <>
       <Link className="rd-crumb" to={{ pathname: "/networks", search }}>
@@ -165,6 +150,9 @@ export default function NetworkPage() {
           {p.type}
         </span>
         <div className="rd-grow" />
+        <Link className="rd-btn" to={compareTo}>
+          ⇄ Compare
+        </Link>
         <button className={`rd-btn${watched ? " on" : ""}`} onClick={toggleWatch}>
           {watched ? "★ On watchlist" : "☆ Add to watchlist"}
         </button>
@@ -181,35 +169,20 @@ export default function NetworkPage() {
         <div className="rd-split">
           <Panel
             title="Footprint by metro"
-            tag={scope && scope.length && !scopeMismatch ? `${visibleFootprint.length} of ${p.footprint.length} · scope` : "click to drill in"}
+            tag={scope && scope.length && !scopeMismatch ? `${visibleFootprint.length} of ${p.footprint.length} · scope` : `${visibleFootprint.length} metros`}
           >
             {scopeMismatch ? (
               <div style={{ padding: "8px 11px", color: "var(--muted)", fontSize: 12, lineHeight: 1.5 }}>
                 {p.name} has no presence in your selected metros — showing its full APAC footprint.
               </div>
             ) : null}
-            {canAggregate ? (
-              <button
-                type="button"
-                className={`rd-shrow rd-metrorow${sel === null ? " sel" : ""}`}
-                style={{ gridTemplateColumns: "150px 1fr 70px 84px" }}
-                onClick={() => setSel(null)}
-              >
-                <span className="nm" style={{ fontWeight: 700 }}>
-                  All scoped metros
-                </span>
-                <Bar pct={100} />
-                <span className="pv rd-num">{visibleFootprint.reduce((a, f) => a + f.capT, 0).toFixed(1)}T</span>
-                <span className="fr rd-num">{visibleFootprint.length} metros</span>
-              </button>
-            ) : null}
             {visibleFootprint.map((f) => (
               <button
                 type="button"
                 key={f.metro}
-                className={`rd-shrow rd-metrorow${f.metro === sel ? " sel" : ""}`}
+                className="rd-shrow rd-metrorow"
                 style={{ gridTemplateColumns: "150px 1fr 70px 84px" }}
-                onClick={() => setSel(f.metro)}
+                onClick={() => document.getElementById(`mb-${f.metro}`)?.scrollIntoView({ behavior: "smooth", block: "center" })}
               >
                 <span className="nm">
                   {f.metro} <span className="rd-cc">{METRO_CODES[f.metro] || f.country}</span>
@@ -244,101 +217,112 @@ export default function NetworkPage() {
       </div>
 
       <div className="rd-sec-head">
-        <h2>{viewLabel || "—"} — allocation &amp; presence</h2>
+        <h2>Allocation &amp; presence — {scopeName}</h2>
         <span className="note rd-num">
-          {metroPorts.length} exchanges · {metroTotalG >= 1000 ? `${(metroTotalG / 1000).toFixed(1)} Tbps` : `${metroTotalG.toFixed(0)} Gbps`} deployed
-          {sel ? "" : " · across scope"}
+          {blocks.length} metro{blocks.length === 1 ? "" : "s"} ·{" "}
+          {totalScopedG >= 1000 ? `${(totalScopedG / 1000).toFixed(1)} Tbps` : `${totalScopedG.toFixed(0)} Gbps`} deployed
+          {facs.loading ? " · fetching facilities…" : ""}
         </span>
       </div>
-      <div className="rd-split">
-        <Panel title={`Capacity allocation across ${sel ? sel : "scoped metros'"} exchanges`}>
-          {segments.length ? (
-            <div style={{ padding: "12px 14px 6px" }}>
-              <div className="rd-stack">
-                {segments.map((s, i) => (
-                  <div
-                    key={i}
-                    className="rd-stackseg"
-                    style={{ width: `${(s.capG / (metroTotalG || 1)) * 100}%`, background: s.color }}
-                    {...bind(
+
+      {blocks.map(({ f, totalG, segments }) => {
+        const metroFacs = facs.rows
+          .filter((x) => x.metro === f.metro)
+          .sort((a, b) => Number(b.isEquinix) - Number(a.isEquinix));
+        return (
+          <div className="rd-metroblock" key={f.metro} id={`mb-${f.metro}`}>
+            <div className="rd-mb-head">
+              <Link className="name" to={{ pathname: `/metro/${encodeURIComponent(f.metro)}`, search }}>
+                {f.metro}
+              </Link>
+              <span className="rd-cc">{METRO_CODES[f.metro] || f.country || ""}</span>
+              <span className="sub rd-num">
+                {f.ixCount} IX · {f.facCount} DC
+              </span>
+              <span className="tot rd-num">{gLabel(totalG)}</span>
+            </div>
+            {segments.length ? (
+              <>
+                <div className="rd-stack">
+                  {segments.map((s, i) => (
+                    <div
+                      key={i}
+                      className="rd-stackseg"
+                      style={{ width: `${(s.capG / (totalG || 1)) * 100}%`, background: s.color }}
+                      {...bind(
+                        <>
+                          <div className="th">{s.label}</div>
+                          <div className="tl">
+                            <span>Capacity</span>
+                            <b>{gLabel(s.capG)}</b>
+                          </div>
+                          <div className="tl">
+                            <span>Share of {f.metro}</span>
+                            <b>{((s.capG / (totalG || 1)) * 100).toFixed(0)}%</b>
+                          </div>
+                        </>
+                      )}
+                    >
+                      {s.capG / (totalG || 1) > 0.14 ? gLabel(s.capG) : ""}
+                    </div>
+                  ))}
+                </div>
+                <div className="rd-stacklegend rd-mb-legend">
+                  {segments.slice(0, 4).map((s, i) => {
+                    const inner = (
                       <>
-                        <div className="th">{s.label}</div>
-                        <div className="tl">
-                          <span>Capacity</span>
-                          <b>{gLabel(s.capG)}</b>
-                        </div>
-                        <div className="tl">
-                          <span>Share</span>
-                          <b>{((s.capG / (metroTotalG || 1)) * 100).toFixed(0)}%</b>
-                        </div>
+                        <span className="sw" style={{ background: s.color }} />
+                        <span className="l">{s.label.length > 26 ? `${s.label.slice(0, 25)}…` : s.label}</span>
+                        {s.eqx ? (
+                          <span className="rd-tagx" style={{ padding: "1px 5px" }}>
+                            EQX
+                          </span>
+                        ) : null}
+                        <span className="v rd-num">
+                          {gLabel(s.capG)} · {((s.capG / (totalG || 1)) * 100).toFixed(0)}%
+                        </span>
                       </>
-                    )}
-                  >
-                    {(s.capG / (metroTotalG || 1)) > 0.12 ? gLabel(s.capG) : ""}
-                  </div>
+                    );
+                    return s.ixId > 0 ? (
+                      <Link key={i} className="rd-legrow" to={{ pathname: `/exchange/${s.ixId}`, search }}>
+                        {inner}
+                      </Link>
+                    ) : (
+                      <div key={i} className="rd-legrow">
+                        {inner}
+                      </div>
+                    );
+                  })}
+                </div>
+              </>
+            ) : (
+              <div style={{ color: "var(--muted)", fontSize: 12.5, padding: "4px 0" }}>
+                No listed exchange ports in {f.metro} — facility-only presence.
+              </div>
+            )}
+            {metroFacs.length ? (
+              <div className="rd-facchips">
+                {metroFacs.map((x) => (
+                  <span key={x.facId} className={`rd-facchip${x.isEquinix ? " eqx" : ""}`} title={`${x.name} · ${x.org}`}>
+                    {x.name.length > 32 ? `${x.name.slice(0, 31)}…` : x.name}
+                  </span>
                 ))}
               </div>
-              <div className="rd-stacklegend">
-                {segments.map((s, i) => {
-                  const inner = (
-                    <>
-                      <span className="sw" style={{ background: s.color }} />
-                      <span className="l">{s.label.length > 24 ? `${s.label.slice(0, 23)}…` : s.label}</span>
-                      {s.eqx ? <span className="rd-tagx" style={{ padding: "1px 5px" }}>EQX</span> : null}
-                      <span className="v rd-num">
-                        {gLabel(s.capG)} · {((s.capG / (metroTotalG || 1)) * 100).toFixed(0)}%
-                      </span>
-                    </>
-                  );
-                  return s.ixId > 0 ? (
-                    <Link key={i} className="rd-legrow" to={{ pathname: `/exchange/${s.ixId}`, search }}>
-                      {inner}
-                    </Link>
-                  ) : (
-                    <div key={i} className="rd-legrow">
-                      {inner}
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          ) : (
-            empty(`${p.name} has no listed exchange ports in ${viewLabel}.`)
-          )}
-        </Panel>
-
-        <Panel
-          title={`Facilities in ${sel ? sel : "scoped metros"}`}
-          tag={facs.loading ? "loading…" : `${metroFacs.length} present`}
-        >
-          {facs.loading ? (
-            <div style={{ padding: "16px 12px", color: "var(--muted)", fontSize: 12.5, display: "flex", alignItems: "center", gap: 10 }}>
-              <span className="rd-spinner" style={{ width: 16, height: 16, borderWidth: 2, margin: 0 }} /> Fetching live facility presence…
-            </div>
-          ) : facs.error ? (
-            empty(`Couldn't load facilities: ${facs.error}`)
-          ) : metroFacs.length ? (
-            metroFacs.map((f) => (
-              <div className={`rd-shrow${f.isEquinix ? " eqxrow" : ""}`} key={f.facId} style={{ gridTemplateColumns: "1fr auto" }}>
-                <span className="nm" style={f.isEquinix ? { color: "var(--equinix)" } : undefined} title={f.name}>
-                  {f.name.length > 30 ? `${f.name.slice(0, 29)}…` : f.name}
-                  {!sel && f.metro ? <span className="rd-cc" style={{ marginLeft: 7 }}>{METRO_CODES[f.metro] || f.metro}</span> : null}
-                </span>
-                <span className="fr rd-num" title={f.org}>
-                  {f.org.length > 18 ? `${f.org.slice(0, 17)}…` : f.org}
+            ) : !facs.loading && !facs.error ? (
+              <div className="rd-facchips">
+                <span className="rd-facchip" style={{ opacity: 0.7 }}>
+                  no listed facilities
                 </span>
               </div>
-            ))
-          ) : (
-            empty(`${p.name} lists no facilities in ${viewLabel}.`)
-          )}
-        </Panel>
-      </div>
+            ) : null}
+          </div>
+        );
+      })}
 
       <div className="rd-footnote">
         Snapshot-based ({fmtMonth(latest)}) for capacity and metros; facility presence is fetched live from PeeringDB.
-        Port sizes and facility memberships are self-reported. Click a metro above to change the allocation and facility
-        views; click an exchange in the legend for its full profile.
+        Every scoped metro renders at once — change the metro scope above and this section follows. Click an exchange in
+        a legend for its profile, or a metro name for the metro view.
       </div>
       {tipNode}
     </>

@@ -849,6 +849,85 @@ a.rd-legrow:hover { background: var(--surface-2); }
 .rd-legrow .l { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .rd-legrow .v { color: var(--muted); font-size: 11.5px; white-space: nowrap; }
 
+/* ---------- per-metro allocation blocks ---------- */
+.rd-metroblock {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: var(--shadow);
+  padding: 14px 16px;
+  margin-bottom: 14px;
+}
+.rd-mb-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 10px; }
+.rd-mb-head a.name { font-weight: 700; font-size: 14.5px; color: var(--text); text-decoration: none; }
+.rd-mb-head a.name:hover { color: var(--accent); }
+.rd-mb-head .sub { color: var(--faint); font-size: 11px; }
+.rd-mb-head .tot { margin-left: auto; font-weight: 700; font-size: 13.5px; }
+.rd-mb-legend { margin-top: 8px; }
+.rd-facchips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.rd-facchip {
+  font-size: 11px;
+  padding: 3px 9px;
+  border-radius: 6px;
+  background: var(--surface-2);
+  color: var(--muted);
+  border: 1px solid var(--border);
+}
+.rd-facchip.eqx { background: var(--equinix-bg); color: var(--equinix); border-color: transparent; font-weight: 600; }
+
+/* ---------- typeahead ---------- */
+.rd-ta { position: relative; width: 100%; }
+.rd-ta-pop {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  z-index: 45;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  box-shadow: var(--shadow);
+  max-height: 280px;
+  overflow: auto;
+}
+.rd-ta-row { display: flex; align-items: center; gap: 9px; padding: 9px 13px; cursor: pointer; font-size: 12.5px; }
+.rd-ta-row:hover { background: var(--surface-2); }
+.rd-ta-row .nm { font-weight: 600; flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rd-ta-row .as { color: var(--faint); font-size: 11px; }
+.rd-ta-row .cap { color: var(--muted); font-size: 11px; }
+
+/* ---------- compare grid ---------- */
+.rd-cgrid { border-collapse: separate; border-spacing: 3px; width: 100%; }
+.rd-cgrid thead th {
+  font-size: 10.5px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+  font-weight: 700;
+  padding: 8px 8px;
+  text-align: left;
+  min-width: 130px;
+}
+.rd-cgrid thead th a { color: var(--text); text-decoration: none; }
+.rd-cgrid thead th a:hover { color: var(--accent); }
+.rd-cgrid thead th .mx { display: block; font-size: 9px; color: var(--faint); font-weight: 500; text-transform: none; letter-spacing: 0; }
+.rd-cgrid th.who, .rd-cgrid td.who { min-width: 190px; }
+.rd-cgrid td.who { padding: 8px 8px; white-space: nowrap; }
+.rd-cgrid td.who .sub { color: var(--faint); font-size: 10.5px; margin-left: 7px; }
+.rd-cgrid td.cell { padding: 8px 8px; vertical-align: middle; }
+.rd-cgrid td.cell .none { color: var(--faint); }
+.rd-cmini-wrap { display: flex; align-items: center; gap: 8px; }
+.rd-cmini {
+  display: flex;
+  height: 16px;
+  border-radius: 4px;
+  overflow: hidden;
+  gap: 1px;
+  min-width: 8px;
+}
+.rd-cmini i { display: block; min-width: 2px; }
+.rd-cmini-wrap .tot { font-size: 11px; font-weight: 700; color: var(--muted); white-space: nowrap; }
+
 /* ---------- exchange profile ---------- */
 .rd-crumb {
   display: inline-flex;

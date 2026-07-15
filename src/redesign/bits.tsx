@@ -123,6 +123,119 @@ export function Panel({ title, tag, children }: { title: string; tag?: string; c
   );
 }
 
+/* Type-ahead for picking networks by name or ASN. Pass the directory
+   options; Enter with a raw number falls through as an ASN. */
+export function NetworkTypeahead({
+  options,
+  onPick,
+  placeholder,
+  exclude,
+}: {
+  options: Array<{ asn: number; name: string; type: string; capT: number }>;
+  onPick: (asn: number) => void;
+  placeholder?: string;
+  exclude?: Set<number>;
+}) {
+  const [q, setQ] = useState("");
+  const [open, setOpen] = useState(false);
+  const matches = React.useMemo(() => {
+    const s = q.trim().toLowerCase();
+    if (!s) return [];
+    const asnq = s.replace(/^as/, "");
+    return options
+      .filter((o) => !exclude?.has(o.asn))
+      .filter((o) => o.name.toLowerCase().includes(s) || String(o.asn).includes(asnq))
+      .slice(0, 8);
+  }, [q, options, exclude]);
+
+  const pick = (asn: number) => {
+    onPick(asn);
+    setQ("");
+    setOpen(false);
+  };
+
+  return (
+    <div className="rd-ta">
+      <div className="rd-search-box">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+          <circle cx="11" cy="11" r="7" />
+          <path d="m20 20-3-3" />
+        </svg>
+        <input
+          value={q}
+          placeholder={placeholder || "Add network by name or ASN…"}
+          onChange={(e) => {
+            setQ(e.target.value);
+            setOpen(true);
+          }}
+          onFocus={() => setOpen(true)}
+          onBlur={() => setTimeout(() => setOpen(false), 150)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              if (matches.length) pick(matches[0].asn);
+              else {
+                const n = Number(q.replace(/^as/i, "").trim());
+                if (Number.isFinite(n) && n > 0) pick(n);
+              }
+            }
+            if (e.key === "Escape") setOpen(false);
+          }}
+        />
+      </div>
+      {open && matches.length ? (
+        <div className="rd-ta-pop">
+          {matches.map((m) => (
+            <div key={m.asn} className="rd-ta-row" onMouseDown={() => pick(m.asn)}>
+              <span className="nm">{m.name}</span>
+              <span className="as rd-num">AS{m.asn}</span>
+              <span className="cap rd-num">{m.capT.toFixed(1)}T</span>
+            </div>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+/* Dual-handle range slider over N detents (snapshot timeline). */
+export function DualRange({
+  count,
+  from,
+  to,
+  onChange,
+}: {
+  count: number;
+  from: number;
+  to: number;
+  onChange: (from: number, to: number) => void;
+}) {
+  const pct = (i: number) => (count > 1 ? (i / (count - 1)) * 100 : 0);
+  return (
+    <div className="rd-dualwrap">
+      <div className="rd-dualtrack" />
+      <div className="rd-dualfill" style={{ left: `${pct(from)}%`, width: `${pct(to) - pct(from)}%` }} />
+      <input
+        type="range"
+        min={0}
+        max={count - 1}
+        step={1}
+        value={from}
+        aria-label="From snapshot"
+        onChange={(e) => onChange(Math.min(Number(e.target.value), to - 1), to)}
+      />
+      <input
+        type="range"
+        min={0}
+        max={count - 1}
+        step={1}
+        value={to}
+        aria-label="To snapshot"
+        onChange={(e) => onChange(from, Math.max(Number(e.target.value), from + 1))}
+      />
+    </div>
+  );
+}
+
 export function Loading({ note }: { note?: string }) {
   return (
     <div className="rd-center">
