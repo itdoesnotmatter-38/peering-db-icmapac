@@ -992,31 +992,71 @@ export interface ExchangeRank {
   nets: number;
   isEquinix: boolean;
   pctOfScope: number;
+  /** month-over-month capacity change (Tbps) */
+  dCapT: number;
+  /** month-over-month member-count change */
+  dNets: number;
+  /** share of its own metro's IX capacity */
+  metroSharePct: number;
+  /** capacity per snapshot, for row sparklines */
+  spark: number[];
 }
 
 /** Exchanges in the (already scope-filtered) dataset, ranked by capacity. */
 export function exchangesRanking(fd: TrendsResponse, latest: string): ExchangeRank[] {
-  const agg = new Map<number, ExchangeRank>();
-  let total = 0;
-  for (const r of fd.ixTrend) {
-    if (r.snapshotDate !== latest) continue;
-    const capT = (r.capacityMbps || 0) / 1e6;
-    total += capT;
-    const e = agg.get(r.ixId) || {
-      ixId: r.ixId,
-      name: r.ixName,
-      metro: r.metro,
-      capT: 0,
-      nets: 0,
-      isEquinix: isEquinixIx(r.ixName),
-      pctOfScope: 0,
-    };
-    e.capT += capT;
-    e.nets = Math.max(e.nets, r.networkCount || 0);
-    agg.set(r.ixId, e);
+  const snaps = uniqSorted(fd.snapshots).filter((x) => x <= latest);
+  const li = snaps.length - 1;
+  const snapIdx = new Map(snaps.map((x, i) => [x, i]));
+
+  interface Acc {
+    name: string;
+    metro: string;
+    isEquinix: boolean;
+    perSnap: number[];
+    nets: number;
+    netsPrev: number;
   }
-  return Array.from(agg.values())
-    .map((e) => ({ ...e, pctOfScope: total ? (e.capT / total) * 100 : 0 }))
+  const agg = new Map<number, Acc>();
+  for (const r of fd.ixTrend) {
+    const si = snapIdx.get(r.snapshotDate);
+    if (si === undefined) continue;
+    let e = agg.get(r.ixId);
+    if (!e) {
+      e = { name: r.ixName, metro: r.metro, isEquinix: isEquinixIx(r.ixName), perSnap: new Array(snaps.length).fill(0), nets: 0, netsPrev: 0 };
+      agg.set(r.ixId, e);
+    }
+    e.perSnap[si] += (r.capacityMbps || 0) / 1e6;
+    if (si === li) {
+      e.name = r.ixName;
+      e.nets = Math.max(e.nets, r.networkCount || 0);
+    } else if (si === li - 1) {
+      e.netsPrev = Math.max(e.netsPrev, r.networkCount || 0);
+    }
+  }
+
+  let total = 0;
+  const metroTotal = new Map<string, number>();
+  agg.forEach((e) => {
+    const c = e.perSnap[li];
+    total += c;
+    metroTotal.set(e.metro, (metroTotal.get(e.metro) || 0) + c);
+  });
+
+  return Array.from(agg.entries())
+    .map(([ixId, e]) => ({
+      ixId,
+      name: e.name,
+      metro: e.metro,
+      isEquinix: e.isEquinix,
+      capT: e.perSnap[li],
+      nets: e.nets,
+      pctOfScope: total ? (e.perSnap[li] / total) * 100 : 0,
+      dCapT: li > 0 ? e.perSnap[li] - e.perSnap[li - 1] : 0,
+      dNets: li > 0 ? e.nets - e.netsPrev : 0,
+      metroSharePct: (metroTotal.get(e.metro) || 0) > 0 ? (e.perSnap[li] / (metroTotal.get(e.metro) || 1)) * 100 : 0,
+      spark: e.perSnap,
+    }))
+    .filter((e) => e.capT > 0 || e.nets > 0)
     .sort((a, b) => b.capT - a.capT);
 }
 
@@ -1080,49 +1120,98 @@ export interface NetworkDirEntry {
   dCapT: number;
   /** share of this network's IX capacity on Equinix exchanges */
   eqxPct: number;
+  /** facility presences at latest */
+  dcs: number;
+  /** biggest metro by capacity at latest */
+  anchorMetro: string;
+  /** first appeared in the latest snapshot */
+  isNew: boolean;
+  /** capacity per snapshot, for row sparklines */
+  spark: number[];
 }
 
 /** All networks in the scope-filtered dataset, aggregated for the directory. */
 export function networksDirectory(fd: TrendsResponse, latest: string): NetworkDirEntry[] {
-  const agg = new Map<number, { name: string; type: string; cap: number; metros: Set<string>; ix: number }>();
-  for (const r of fd.networkTrend) {
-    if (r.snapshotDate !== latest) continue;
-    const e = agg.get(r.asn) || { name: r.networkName, type: r.networkType || "—", cap: 0, metros: new Set<string>(), ix: 0 };
-    e.cap += r.capacityMbps || 0;
-    e.metros.add(r.metro);
-    e.ix += r.ixCount || 0;
-    e.name = r.networkName;
-    e.type = r.networkType || e.type;
-    agg.set(r.asn, e);
+  const snaps = uniqSorted(fd.snapshots).filter((x) => x <= latest);
+  const li = snaps.length - 1;
+  const snapIdx = new Map(snaps.map((x, i) => [x, i]));
+
+  interface Acc {
+    name: string;
+    type: string;
+    metros: Set<string>;
+    ix: number;
+    dc: number;
+    perSnap: number[];
+    firstSeen: number;
+    metroCap: Map<string, number>;
   }
-  const all = uniqSorted(fd.snapshots);
-  const prev = all[all.indexOf(latest) - 1] ?? latest;
-  const prevCap = new Map<number, number>();
-  if (prev !== latest) {
-    for (const r of fd.networkTrend) {
-      if (r.snapshotDate === prev) prevCap.set(r.asn, (prevCap.get(r.asn) || 0) + (r.capacityMbps || 0));
+  const agg = new Map<number, Acc>();
+  for (const r of fd.networkTrend) {
+    const si = snapIdx.get(r.snapshotDate);
+    if (si === undefined) continue;
+    let e = agg.get(r.asn);
+    if (!e) {
+      e = {
+        name: r.networkName,
+        type: r.networkType || "\u2014",
+        metros: new Set<string>(),
+        ix: 0,
+        dc: 0,
+        perSnap: new Array(snaps.length).fill(0),
+        firstSeen: si,
+        metroCap: new Map<string, number>(),
+      };
+      agg.set(r.asn, e);
+    }
+    e.perSnap[si] += (r.capacityMbps || 0) / 1e6;
+    e.firstSeen = Math.min(e.firstSeen, si);
+    if (si === li) {
+      e.name = r.networkName;
+      e.type = r.networkType || e.type;
+      e.metros.add(r.metro);
+      e.ix += r.ixCount || 0;
+      e.dc += r.facilityCount || 0;
+      e.metroCap.set(r.metro, (e.metroCap.get(r.metro) || 0) + (r.capacityMbps || 0) / 1e6);
     }
   }
+
   const eqxCap = new Map<number, number>();
   for (const r of fd.networkIxTrend) {
     if (r.snapshotDate === latest && isEquinixIx(r.ixName)) {
-      eqxCap.set(r.asn, (eqxCap.get(r.asn) || 0) + (r.capacityMbps || 0));
+      eqxCap.set(r.asn, (eqxCap.get(r.asn) || 0) + (r.capacityMbps || 0) / 1e6);
     }
   }
+
   return Array.from(agg.entries())
-    .map(([asn, e]) => ({
-      asn,
-      name: e.name,
-      type: e.type,
-      capT: e.cap / 1e6,
-      metros: e.metros.size,
-      ports: e.ix,
-      dCapT: prev !== latest ? (e.cap - (prevCap.get(asn) || 0)) / 1e6 : 0,
-      eqxPct: e.cap > 0 ? Math.min(100, ((eqxCap.get(asn) || 0) / e.cap) * 100) : 0,
-    }))
+    .filter(([, e]) => e.metros.size > 0)
+    .map(([asn, e]) => {
+      const capT = e.perSnap[li];
+      let anchorMetro = "";
+      let best = -1;
+      e.metroCap.forEach((v, m) => {
+        if (v > best) {
+          best = v;
+          anchorMetro = m;
+        }
+      });
+      return {
+        asn,
+        name: e.name,
+        type: e.type,
+        capT,
+        metros: e.metros.size,
+        ports: e.ix,
+        dCapT: li > 0 ? capT - e.perSnap[li - 1] : 0,
+        eqxPct: capT > 0 ? Math.min(100, ((eqxCap.get(asn) || 0) / capT) * 100) : 0,
+        dcs: e.dc,
+        anchorMetro,
+        isNew: li > 0 && e.firstSeen === li,
+        spark: e.perSnap,
+      };
+    })
     .sort((a, b) => b.capT - a.capT);
 }
-
 export interface ExchangeMember {
   asn: number;
   name: string;

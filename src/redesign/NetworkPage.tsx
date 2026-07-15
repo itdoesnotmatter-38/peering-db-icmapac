@@ -49,6 +49,30 @@ export default function NetworkPage() {
     error: null,
   });
 
+  // live PeeringDB net record — peering policy, traffic band, scope, website
+  const [netInfo, setNetInfo] = useState<{ policy?: string; traffic?: string; scope?: string; website?: string } | null>(null);
+  useEffect(() => {
+    if (!p.found || !p.netId) return;
+    let alive = true;
+    setNetInfo(null);
+    fetchPeeringDb<any>("net", { id: p.netId })
+      .then((resp) => {
+        if (!alive) return;
+        const r = resp.data?.[0];
+        if (r)
+          setNetInfo({
+            policy: r.policy_general || undefined,
+            traffic: r.info_traffic || undefined,
+            scope: r.info_scope || undefined,
+            website: r.website || undefined,
+          });
+      })
+      .catch(() => alive && setNetInfo(null));
+    return () => {
+      alive = false;
+    };
+  }, [p]);
+
   useEffect(() => {
     if (!p.found || !p.netId) return;
     let alive = true;
@@ -149,6 +173,26 @@ export default function NetworkPage() {
         <span className="rd-cc" style={{ fontSize: 11, padding: "3px 8px" }}>
           {p.type}
         </span>
+        {netInfo?.policy ? (
+          <span className={`rd-polchip ${netInfo.policy.toLowerCase()}`} title="PeeringDB peering policy (live)">
+            {netInfo.policy} policy
+          </span>
+        ) : null}
+        {netInfo?.traffic ? (
+          <span className="rd-cc" style={{ fontSize: 11, padding: "3px 8px" }} title="Self-declared traffic band (live)">
+            ~{netInfo.traffic}
+          </span>
+        ) : null}
+        {netInfo?.scope ? (
+          <span className="rd-cc" style={{ fontSize: 11, padding: "3px 8px" }} title="Geographic scope (live)">
+            {netInfo.scope}
+          </span>
+        ) : null}
+        {netInfo?.website ? (
+          <a className="rd-cc rd-weblink" style={{ fontSize: 11, padding: "3px 8px" }} href={netInfo.website} target="_blank" rel="noreferrer">
+            {netInfo.website.replace(/^https?:\/\/(www\.)?/, "").replace(/\/$/, "")} ↗
+          </a>
+        ) : null}
         <div className="rd-grow" />
         <Link className="rd-btn" to={compareTo}>
           ⇄ Analyse
