@@ -743,6 +743,8 @@ export interface ShiftCell {
   ixName: string;
   metro: string;
   isEquinix: boolean;
+  fromG: number;
+  toG: number;
   changeG: number;
 }
 
@@ -794,16 +796,18 @@ export function marketChanges(fd: TrendsResponse, from: string, to: string): Mar
     }
     let c = b.cells.get(r.ixId);
     if (!c) {
-      c = { ixId: r.ixId, ixName: r.ixName || `IX ${r.ixId}`, metro: r.metro, isEquinix: isEquinixIx(r.ixName), changeG: 0 };
+      c = { ixId: r.ixId, ixName: r.ixName || `IX ${r.ixId}`, metro: r.metro, isEquinix: isEquinixIx(r.ixName), fromG: 0, toG: 0, changeG: 0 };
       b.cells.set(r.ixId, c);
     }
     return c;
   };
 
   for (const r of fd.networkIxTrend) {
-    if (r.snapshotDate === from) touch(r).changeG -= (r.capacityMbps || 0) / 1000;
-    else if (r.snapshotDate === to) touch(r).changeG += (r.capacityMbps || 0) / 1000;
+    const g = (r.capacityMbps || 0) / 1000;
+    if (r.snapshotDate === from) touch(r).fromG += g;
+    else if (r.snapshotDate === to) touch(r).toG += g;
   }
+  buckets.forEach((b) => b.cells.forEach((c) => (c.changeG = c.toG - c.fromG)));
 
   let upgradedG = 0;
   let reducedG = 0;

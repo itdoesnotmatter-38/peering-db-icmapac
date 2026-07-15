@@ -1,4 +1,32 @@
-import React from "react";
+import React, { useCallback, useState } from "react";
+
+/* One shared, mouse-following tooltip for heatmap cells. Render `node`
+   once at the page root; spread `bind(content)` onto each hoverable cell. */
+export function useTooltip() {
+  const [tip, setTip] = useState<{ x: number; y: number; content: React.ReactNode } | null>(null);
+  const bind = useCallback(
+    (content: React.ReactNode) => ({
+      onMouseEnter: (e: React.MouseEvent) => setTip({ x: e.clientX, y: e.clientY, content }),
+      onMouseMove: (e: React.MouseEvent) => setTip((t) => (t ? { ...t, x: e.clientX, y: e.clientY } : t)),
+      onMouseLeave: () => setTip(null),
+    }),
+    []
+  );
+  const flip = tip ? tip.x > window.innerWidth - 260 : false;
+  const node = tip ? (
+    <div
+      className="rd-tip"
+      style={{
+        left: flip ? undefined : tip.x + 14,
+        right: flip ? window.innerWidth - tip.x + 14 : undefined,
+        top: tip.y + 16,
+      }}
+    >
+      {tip.content}
+    </div>
+  ) : null;
+  return { bind, node };
+}
 
 /* Small shared pieces for the redesigned views. */
 

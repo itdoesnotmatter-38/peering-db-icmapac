@@ -607,6 +607,26 @@ a.rd-pill:hover, button.rd-pill:hover { border-color: var(--accent); cursor: poi
 .rd-slider-tick:hover { color: var(--text); background: var(--surface-2); }
 .rd-slider-tick.on { color: var(--accent); font-weight: 700; }
 
+/* ---------- tooltip ---------- */
+.rd-tip {
+  position: fixed;
+  z-index: 60;
+  pointer-events: none;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  box-shadow: var(--shadow);
+  padding: 9px 12px;
+  font-size: 12px;
+  line-height: 1.5;
+  max-width: 240px;
+  color: var(--text);
+}
+.rd-tip .th { font-weight: 700; margin-bottom: 3px; display: flex; align-items: center; gap: 6px; }
+.rd-tip .tl { display: flex; justify-content: space-between; gap: 14px; color: var(--muted); }
+.rd-tip .tl b { color: var(--text); font-variant-numeric: tabular-nums; font-weight: 700; }
+.rd-tip .thint { margin-top: 5px; font-size: 10.5px; color: var(--faint); }
+
 /* ---------- period selector ---------- */
 .rd-period { display: flex; align-items: center; gap: 10px; }
 .rd-select {
@@ -650,6 +670,8 @@ a.rd-pill:hover, button.rd-pill:hover { border-color: var(--accent); cursor: poi
   white-space: nowrap;
 }
 .rd-shift td.who .nm { font-weight: 600; font-size: 12.5px; }
+.rd-netlink { color: var(--text); text-decoration: none; }
+.rd-netlink:hover { color: var(--accent); text-decoration: underline; }
 .rd-shift td.who .sub { color: var(--faint); font-size: 10.5px; }
 .rd-shift td.cell {
   text-align: center;

@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from "react";
-import { Link, useLocation } from "react-router-dom";
+import { Link, useLocation, useSearchParams } from "react-router-dom";
 import { useSnapshot } from "./Shell";
-import { Kpi } from "./bits";
+import { Kpi, useTooltip } from "./bits";
 import { ShiftStatus, fmtDayMonth, marketChanges, shiftColumns } from "./data";
 
 /* Market-changes deep dive: a network × exchange matrix of port-capacity
@@ -31,17 +31,38 @@ export default function ChangesPage() {
   const { scoped, derived } = useSnapshot();
   const { snapshots } = derived;
   const { search } = useLocation();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const { bind, node: tipNode } = useTooltip();
 
-  const [from, setFrom] = useState(snapshots[snapshots.length - 2] || snapshots[0]);
-  const [to, setTo] = useState(snapshots[snapshots.length - 1]);
+  // deep-link params (from a Movement cell): from / to / focus (metro)
+  const pFrom = searchParams.get("from");
+  const pTo = searchParams.get("to");
+  const focus = searchParams.get("focus");
+
+  const [from, setFrom] = useState(
+    pFrom && snapshots.includes(pFrom) ? pFrom : snapshots[snapshots.length - 2] || snapshots[0]
+  );
+  const [to, setTo] = useState(pTo && snapshots.includes(pTo) ? pTo : snapshots[snapshots.length - 1]);
   const [filter, setFilter] = useState<Filter>("all");
+
+  const clearFocus = () =>
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        next.delete("focus");
+        return next;
+      },
+      { replace: true }
+    );
 
   const mc = useMemo(() => marketChanges(scoped, from, to), [scoped, from, to]);
 
   const filtered = useMemo(() => {
-    const rows = mc.networks.filter((n) => (filter === "all" ? true : n.status === filter));
+    const rows = mc.networks
+      .filter((n) => (filter === "all" ? true : n.status === filter))
+      .filter((n) => (focus ? n.metro === focus : true));
     return rows.slice(0, 16);
-  }, [mc, filter]);
+  }, [mc, filter, focus]);
 
   const columns = useMemo(() => shiftColumns(filtered, 10), [filtered]);
   const maxAbs = useMemo(
@@ -97,6 +118,11 @@ export default function ChangesPage() {
           </select>
         </div>
         <div className="rd-grow" />
+        {focus ? (
+          <button className="rd-chip on" onClick={clearFocus} title="Clear metro focus">
+            {focus} ✕
+          </button>
+        ) : null}
         <div className="rd-chips" style={{ marginBottom: 0 }}>
           {FILTERS.map((f) => (
             <button key={f.id} className={`rd-chip${filter === f.id ? " on" : ""}`} onClick={() => setFilter(f.id)}>
@@ -144,7 +170,9 @@ export default function ChangesPage() {
             {filtered.map((n) => (
               <tr key={n.key}>
                 <td className="who">
-                  <span className="nm">{n.name.length > 24 ? `${n.name.slice(0, 23)}…` : n.name}</span>
+                  <Link to={{ pathname: `/net/${n.asn}`, search }} className="nm rd-netlink">
+                    {n.name.length > 24 ? `${n.name.slice(0, 23)}…` : n.name}
+                  </Link>
                   <span className="sub rd-num">AS{n.asn}</span>
                   {statusChip(n.status)}
                 </td>
@@ -155,6 +183,27 @@ export default function ChangesPage() {
                       key={c.ixId}
                       className={`cell rd-num${c.isEquinix ? " eqxcol" : ""}`}
                       style={{ background: cell ? cellColor(cell.changeG) : undefined }}
+                      {...(cell
+                        ? bind(
+                            <>
+                              <div className="th">{n.name}</div>
+                              <div className="tl">
+                                <span>{cell.ixName}</span>
+                                <b>{cell.metro}</b>
+                              </div>
+                              <div className="tl">
+                                <span>Port</span>
+                                <b>
+                                  {cell.fromG.toFixed(0)}G → {cell.toG.toFixed(0)}G
+                                </b>
+                              </div>
+                              <div className="tl">
+                                <span>Change</span>
+                                <b className={cell.changeG >= 0 ? "rd-up" : "rd-down"}>{gLabel(cell.changeG)}</b>
+                              </div>
+                            </>
+                          )
+                        : {})}
                     >
                       {cell ? gLabel(cell.changeG) : "·"}
                     </td>
@@ -182,6 +231,7 @@ export default function ChangesPage() {
         often a network shifting ports onto, or off, a given IX. Click any exchange header for its full profile.
         PeeringDB is self-reported, so read a change as a change in the listed record, not certain live traffic.
       </div>
+      {tipNode}
     </>
   );
 }
