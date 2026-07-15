@@ -62,8 +62,8 @@ export default function ExchangePage() {
 
   return (
     <>
-      <Link className="rd-crumb" to={{ pathname: "/share", search }}>
-        ← Market share
+      <Link className="rd-crumb" to={{ pathname: "/exchanges", search }}>
+        ← Exchanges
       </Link>
 
       <div className="rd-xhead">

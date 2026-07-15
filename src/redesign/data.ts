@@ -1024,6 +1024,33 @@ export function facilitiesRanking(fd: TrendsResponse, latest: string): FacilityR
     .sort((a, b) => b.networkCount - a.networkCount);
 }
 
+export interface NetworkDirEntry {
+  asn: number;
+  name: string;
+  type: string;
+  capT: number;
+  metros: number;
+  ports: number;
+}
+
+/** All networks in the scope-filtered dataset, aggregated for the directory. */
+export function networksDirectory(fd: TrendsResponse, latest: string): NetworkDirEntry[] {
+  const agg = new Map<number, { name: string; type: string; cap: number; metros: Set<string>; ix: number }>();
+  for (const r of fd.networkTrend) {
+    if (r.snapshotDate !== latest) continue;
+    const e = agg.get(r.asn) || { name: r.networkName, type: r.networkType || "—", cap: 0, metros: new Set<string>(), ix: 0 };
+    e.cap += r.capacityMbps || 0;
+    e.metros.add(r.metro);
+    e.ix += r.ixCount || 0;
+    e.name = r.networkName;
+    e.type = r.networkType || e.type;
+    agg.set(r.asn, e);
+  }
+  return Array.from(agg.entries())
+    .map(([asn, e]) => ({ asn, name: e.name, type: e.type, capT: e.cap / 1e6, metros: e.metros.size, ports: e.ix }))
+    .sort((a, b) => b.capT - a.capT);
+}
+
 export interface ExchangeMember {
   asn: number;
   name: string;

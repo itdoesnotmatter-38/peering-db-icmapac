@@ -747,6 +747,50 @@ a.rd-pill:hover, button.rd-pill:hover { border-color: var(--accent); cursor: poi
 .rd-heat td.cell.selcol:not(.selcell) { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 35%, transparent); }
 .rd-scope-hint { font-size: 11px; color: var(--gap); align-self: center; }
 
+/* ---------- directory pages ---------- */
+.rd-search-box {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  flex: 1;
+  min-width: 220px;
+  border: 1px solid var(--border-strong);
+  background: var(--surface);
+  border-radius: 9px;
+  padding: 8px 13px;
+}
+.rd-search-box:focus-within { border-color: var(--accent); }
+.rd-search-box svg { width: 16px; height: 16px; color: var(--faint); flex: none; }
+.rd-search-box input {
+  border: none;
+  background: none;
+  outline: none;
+  color: var(--text);
+  font-family: var(--ui);
+  font-size: 13.5px;
+  width: 100%;
+}
+.rd-dirrow {
+  display: grid;
+  grid-template-columns: 26px 1fr 200px 60px 90px;
+  align-items: center;
+  gap: 12px;
+  padding: 9px 12px;
+  border-radius: 9px;
+}
+.rd-dirrow:hover { background: var(--surface-2); }
+.rd-dirrow.eqxrow, .rd-dirrow.eqxrow:hover { background: var(--equinix-bg); }
+.rd-dirrow .rk { color: var(--faint); font-size: 11px; text-align: right; }
+.rd-dirrow .nm { font-weight: 600; font-size: 13.5px; display: flex; align-items: center; gap: 2px; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rd-dirrow .nm .ty { margin-left: 8px; font-size: 9.5px; color: var(--muted); background: var(--surface-2); border-radius: 5px; padding: 1px 6px; font-weight: 400; }
+.rd-dirrow.eqxrow .nm .ty { background: color-mix(in srgb, var(--equinix) 12%, transparent); }
+.rd-dirrow .pv { font-weight: 700; text-align: right; }
+.rd-dirrow .meta { color: var(--faint); font-size: 11px; text-align: right; }
+@media (max-width: 1080px) {
+  .rd-dirrow { grid-template-columns: 22px 1fr 60px; }
+  .rd-dirrow .bar, .rd-dirrow .meta { display: none; }
+}
+
 /* ---------- exchange profile ---------- */
 .rd-crumb {
   display: inline-flex;

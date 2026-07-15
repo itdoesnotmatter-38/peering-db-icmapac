@@ -71,8 +71,14 @@ function useTheme() {
 }
 
 function viewMeta(pathname: string): { title: string; desc: string } {
+  if (pathname === "/exchanges") {
+    return { title: "Exchanges", desc: "Every exchange in scope — search and open its profile" };
+  }
   if (pathname.startsWith("/exchange")) {
     return { title: "Exchange profile", desc: "Snapshot-based view of a single exchange in its metro context" };
+  }
+  if (pathname === "/networks") {
+    return { title: "Networks", desc: "Every network in scope — search by name or ASN and open its profile" };
   }
   if (pathname.startsWith("/net")) {
     return { title: "Network profile", desc: "Snapshot-based footprint of one network across metros, exchanges, and facilities" };
@@ -219,6 +225,19 @@ const icons = {
       <path d="M3 9h18M3 15h18M9 3v18" />
     </svg>
   ),
+  exchanges: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+      <path d="M4 7h16M4 7l3-3M4 7l3 3M20 17H4M20 17l-3-3M20 17l-3 3" />
+    </svg>
+  ),
+  networks: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+      <circle cx="5" cy="12" r="2.5" />
+      <circle cx="19" cy="5" r="2.5" />
+      <circle cx="19" cy="19" r="2.5" />
+      <path d="M7.2 11 16.8 6M7.2 13l9.6 5" />
+    </svg>
+  ),
   downloads: (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
       <path d="M12 3v12m0 0 4-4m-4 4-4-4M4 21h16" />
@@ -350,6 +369,17 @@ export default function Shell() {
           <NavLink to={navTo("/changes")} className={({ isActive }) => `rd-nav-item${isActive ? " active" : ""}`}>
             {icons.changes}
             <span>Market changes</span>
+          </NavLink>
+          <div className="rd-eyebrow rd-nav-label" style={{ marginTop: 14 }}>
+            Directory
+          </div>
+          <NavLink to={navTo("/exchanges")} className={({ isActive }) => `rd-nav-item${isActive ? " active" : ""}`}>
+            {icons.exchanges}
+            <span>Exchanges</span>
+          </NavLink>
+          <NavLink to={navTo("/networks")} className={({ isActive }) => `rd-nav-item${isActive ? " active" : ""}`}>
+            {icons.networks}
+            <span>Networks</span>
           </NavLink>
           <div className="rd-eyebrow rd-nav-label" style={{ marginTop: 14 }}>
             Tools

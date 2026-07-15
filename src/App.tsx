@@ -11,7 +11,9 @@ import SharePage from "./redesign/SharePage";
 import MovementPage from "./redesign/MovementPage";
 import ChangesPage from "./redesign/ChangesPage";
 import ExchangePage from "./redesign/ExchangePage";
+import ExchangesPage from "./redesign/ExchangesPage";
 import NetworkPage from "./redesign/NetworkPage";
+import NetworksPage from "./redesign/NetworksPage";
 import RedesignDownloads from "./redesign/DownloadsPage";
 import LivePage from "./redesign/LivePage";
 
@@ -26,7 +28,9 @@ export default function App() {
           <Route path="/share" element={<SharePage />} />
           <Route path="/movement" element={<MovementPage />} />
           <Route path="/changes" element={<ChangesPage />} />
+          <Route path="/exchanges" element={<ExchangesPage />} />
           <Route path="/exchange/:ixId" element={<ExchangePage />} />
+          <Route path="/networks" element={<NetworksPage />} />
           <Route path="/net/:asn" element={<NetworkPage />} />
           <Route path="/downloads" element={<RedesignDownloads />} />
           <Route path="/live" element={<LivePage />} />

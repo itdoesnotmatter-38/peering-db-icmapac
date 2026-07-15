@@ -62,8 +62,8 @@ export default function NetworkPage() {
 
   return (
     <>
-      <Link className="rd-crumb" to={{ pathname: "/movement", search }}>
-        ← Movement
+      <Link className="rd-crumb" to={{ pathname: "/networks", search }}>
+        ← Networks
       </Link>
 
       <div className="rd-xhead">
