@@ -249,7 +249,7 @@ export interface InsightCard {
   title: string;
   body: string;
   bars?: Array<{ label: string; value: number; max: number; color: string; text: string }>;
-  list?: Array<{ name: string; sub?: string; amount: string; neg?: boolean }>;
+  list?: Array<{ name: string; sub?: string; amount: string; neg?: boolean; asn?: number }>;
 }
 
 export interface WatchRow {
@@ -601,6 +601,7 @@ function buildInsights(
           name: g.networkName,
           sub: g.networkName.includes(`AS${g.asn}`) ? undefined : `AS${g.asn}`,
           amount: `${((g.capacityMbps || 0) / 1e6).toFixed(1)} T`,
+          asn: g.asn,
         })),
       });
     }

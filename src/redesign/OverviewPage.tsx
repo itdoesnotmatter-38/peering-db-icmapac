@@ -98,7 +98,7 @@ export default function OverviewPage() {
             {networkMovers.map((m) => {
               const up = m.dCapT >= 0;
               return (
-                <div className="rd-mover" key={m.asn}>
+                <Link className="rd-mover rd-rowlink" key={m.asn} to={{ pathname: `/net/${m.asn}`, search }}>
                   <span
                     className="ic"
                     style={{ background: up ? "var(--present-bg)" : "var(--gap-bg)", color: up ? "var(--present)" : "var(--gap)" }}
@@ -113,7 +113,7 @@ export default function OverviewPage() {
                     {up ? "+" : "−"}
                     {Math.abs(m.dCapT).toFixed(1)} Tbps
                   </span>
-                </div>
+                </Link>
               );
             })}
           </Panel>

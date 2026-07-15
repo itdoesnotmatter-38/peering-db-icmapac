@@ -1,4 +1,5 @@
 import React from "react";
+import { Link, useLocation } from "react-router-dom";
 import { useSnapshot } from "./Shell";
 import { Bar } from "./bits";
 import { fmtDate, fmtMonth } from "./data";
@@ -6,6 +7,7 @@ import { fmtDate, fmtMonth } from "./data";
 export default function InsightsPage() {
   const { derived } = useSnapshot();
   const { insights, latest, prev } = derived;
+  const { search } = useLocation();
 
   return (
     <>
@@ -37,13 +39,21 @@ export default function InsightsPage() {
             ) : null}
             {card.list ? (
               <div className="rd-ilist">
-                {card.list.map((r, j) => (
-                  <div className="rd-irow" key={j}>
-                    <span className="nm">{r.name}</span>
-                    {r.sub ? <span className="as2 rd-num">{r.sub}</span> : null}
-                    <span className={`amt rd-num${r.neg ? " neg" : ""}`}>{r.amount}</span>
-                  </div>
-                ))}
+                {card.list.map((r, j) =>
+                  r.asn ? (
+                    <Link className="rd-irow rd-netlink" key={j} to={{ pathname: `/net/${r.asn}`, search }} style={{ textDecoration: "none" }}>
+                      <span className="nm">{r.name}</span>
+                      {r.sub ? <span className="as2 rd-num">{r.sub}</span> : null}
+                      <span className={`amt rd-num${r.neg ? " neg" : ""}`}>{r.amount}</span>
+                    </Link>
+                  ) : (
+                    <div className="rd-irow" key={j}>
+                      <span className="nm">{r.name}</span>
+                      {r.sub ? <span className="as2 rd-num">{r.sub}</span> : null}
+                      <span className={`amt rd-num${r.neg ? " neg" : ""}`}>{r.amount}</span>
+                    </div>
+                  )
+                )}
               </div>
             ) : null}
           </div>

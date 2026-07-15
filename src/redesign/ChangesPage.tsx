@@ -2,7 +2,7 @@ import React, { useMemo, useState } from "react";
 import { Link, useLocation, useSearchParams } from "react-router-dom";
 import { useSnapshot } from "./Shell";
 import { Kpi, useTooltip } from "./bits";
-import { ShiftStatus, fmtDayMonth, marketChanges, shiftColumns } from "./data";
+import { METRO_CODES, ShiftStatus, fmtDayMonth, marketChanges, shiftColumns } from "./data";
 
 /* Market-changes deep dive: a network × exchange matrix of port-capacity
    change between two snapshots. Cell = how much a network grew/shrank its
@@ -171,9 +171,12 @@ export default function ChangesPage() {
               <tr key={n.key}>
                 <td className="who">
                   <Link to={{ pathname: `/net/${n.asn}`, search }} className="nm rd-netlink">
-                    {n.name.length > 24 ? `${n.name.slice(0, 23)}…` : n.name}
+                    {n.name.length > 22 ? `${n.name.slice(0, 21)}…` : n.name}
                   </Link>
                   <span className="sub rd-num">AS{n.asn}</span>
+                  <span className="rd-cc" title={n.metro}>
+                    {METRO_CODES[n.metro] || n.metro}
+                  </span>
                   {statusChip(n.status)}
                 </td>
                 {columns.map((c) => {

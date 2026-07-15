@@ -26,7 +26,7 @@ interface FacRow {
 }
 
 export default function NetworkPage() {
-  const { data } = useSnapshot();
+  const { data, scope } = useSnapshot();
   const { asn } = useParams();
   const { search } = useLocation();
   const navigate = useNavigate();
@@ -35,7 +35,17 @@ export default function NetworkPage() {
   const p = useMemo(() => networkProfile(data, Number(asn)), [data, asn]);
   const facMeta = useMemo(() => facilityMeta(data), [data]);
   const [watched, setWatched] = useState<boolean>(() => loadWatchlist().includes(Number(asn)));
-  const [metro, setMetro] = useState<string>(p.footprint[0]?.metro || "");
+
+  // default the selected metro to one in the global scope, so opening a
+  // network while scoped to (say) KUL lands on KUL rather than its biggest metro
+  const defaultMetro = (fp: typeof p.footprint) => {
+    if (scope && scope.length) {
+      const inScope = fp.find((f) => scope.includes(f.metro));
+      if (inScope) return inScope.metro;
+    }
+    return fp[0]?.metro || "";
+  };
+  const [metro, setMetro] = useState<string>(() => defaultMetro(p.footprint));
 
   // live facility membership (netfac) for this network
   const [facs, setFacs] = useState<{ loading: boolean; rows: FacRow[]; error: string | null }>({
@@ -45,8 +55,9 @@ export default function NetworkPage() {
   });
 
   useEffect(() => {
-    setMetro(p.footprint[0]?.metro || "");
-  }, [p]);
+    setMetro(defaultMetro(p.footprint));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [p, scope]);
 
   useEffect(() => {
     if (!p.found || !p.netId) return;
