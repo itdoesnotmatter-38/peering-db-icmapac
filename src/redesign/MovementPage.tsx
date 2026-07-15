@@ -9,12 +9,12 @@ import { fmtDayMonth, movementFor, movementHeatmap } from "./data";
    Market changes (network × IX) pre-filtered to that metro and period. */
 
 export default function MovementPage() {
-  const { scoped, derived } = useSnapshot();
+  const { scoped, derived, asOf } = useSnapshot();
   const { metros } = derived;
   const { search } = useLocation();
   const { bind, node: tipNode } = useTooltip();
 
-  const heat = useMemo(() => movementHeatmap(scoped), [scoped]);
+  const heat = useMemo(() => movementHeatmap(scoped, asOf), [scoped, asOf]);
   const { transitions, rows } = heat;
 
   const [tIdx, setTIdx] = useState(transitions.length - 1);

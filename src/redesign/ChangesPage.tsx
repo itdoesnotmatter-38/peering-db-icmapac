@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from "react";
 import { Link, useLocation, useSearchParams } from "react-router-dom";
 import { useSnapshot } from "./Shell";
-import { Kpi, useTooltip } from "./bits";
+import { DualRange, Kpi, useTooltip } from "./bits";
 import { METRO_CODES, ShiftStatus, fmtDayMonth, marketChanges, shiftColumns } from "./data";
 
 /* Market-changes deep dive: a network × exchange matrix of port-capacity
@@ -39,11 +39,26 @@ export default function ChangesPage() {
   const pTo = searchParams.get("to");
   const focus = searchParams.get("focus");
 
-  const [from, setFrom] = useState(
-    pFrom && snapshots.includes(pFrom) ? pFrom : snapshots[snapshots.length - 2] || snapshots[0]
-  );
-  const [to, setTo] = useState(pTo && snapshots.includes(pTo) ? pTo : snapshots[snapshots.length - 1]);
+  // indices into the (as-of-capped) snapshot timeline; dual-handle slider
+  const [range, setRange] = useState<[number, number]>(() => {
+    const fi = pFrom ? snapshots.indexOf(pFrom) : -1;
+    const ti = pTo ? snapshots.indexOf(pTo) : -1;
+    if (fi >= 0 && ti > fi) return [fi, ti];
+    return [Math.max(0, snapshots.length - 2), snapshots.length - 1];
+  });
+  // keep valid when the timeline changes (as-of slider / scope)
+  React.useEffect(() => {
+    setRange(([f, t]) => {
+      const max = snapshots.length - 1;
+      const nt = Math.min(t, max);
+      const nf = Math.min(f, Math.max(0, nt - 1));
+      return nt > nf ? [nf, nt] : [Math.max(0, max - 1), max];
+    });
+  }, [snapshots.length]);
+  const from = snapshots[range[0]] || snapshots[0];
+  const to = snapshots[range[1]] || snapshots[snapshots.length - 1];
   const [filter, setFilter] = useState<Filter>("all");
+  const [q, setQ] = useState("");
 
   const clearFocus = () =>
     setSearchParams(
@@ -58,11 +73,14 @@ export default function ChangesPage() {
   const mc = useMemo(() => marketChanges(scoped, from, to), [scoped, from, to]);
 
   const filtered = useMemo(() => {
+    const s = q.trim().toLowerCase();
+    const asnq = s.replace(/^as/, "");
     const rows = mc.networks
       .filter((n) => (filter === "all" ? true : n.status === filter))
-      .filter((n) => (focus ? n.metro === focus : true));
+      .filter((n) => (focus ? n.metro === focus : true))
+      .filter((n) => (!s ? true : n.name.toLowerCase().includes(s) || String(n.asn).includes(asnq)));
     return rows.slice(0, 16);
-  }, [mc, filter, focus]);
+  }, [mc, filter, focus, q]);
 
   const columns = useMemo(() => shiftColumns(filtered, 10), [filtered]);
   const maxAbs = useMemo(
@@ -99,23 +117,33 @@ export default function ChangesPage() {
     <>
       {/* period + filter bar */}
       <div className="rd-slider-bar" style={{ alignItems: "center" }}>
-        <div className="rd-period">
-          <span className="rd-eyebrow">Compare</span>
-          <select className="rd-select" value={from} onChange={(e) => setFrom(e.target.value)} aria-label="From snapshot">
-            {snapshots.map((s) => (
-              <option key={s} value={s}>
-                {fmtDayMonth(s)} {s.slice(0, 4)}
-              </option>
+        <div className="rd-slider-block" style={{ minWidth: 280 }}>
+          <span className="rd-eyebrow">
+            Period · <b className="rd-num" style={{ color: "var(--text)" }}>{fmtDayMonth(from)} → {fmtDayMonth(to)}</b>
+          </span>
+          <DualRange count={snapshots.length} from={range[0]} to={range[1]} onChange={(f, t) => setRange([f, t])} />
+          <div className="rd-slider-labels">
+            {snapshots.map((s, i) => (
+              <button
+                key={s}
+                className={`rd-slider-tick${i === range[0] || i === range[1] ? " on" : ""}`}
+                onClick={() => {
+                  const [f, t] = range;
+                  if (Math.abs(i - f) <= Math.abs(i - t) && i < t) setRange([i, t]);
+                  else if (i > f) setRange([f, i]);
+                }}
+              >
+                {fmtDayMonth(s)}
+              </button>
             ))}
-          </select>
-          <span style={{ color: "var(--faint)" }}>→</span>
-          <select className="rd-select" value={to} onChange={(e) => setTo(e.target.value)} aria-label="To snapshot">
-            {snapshots.map((s) => (
-              <option key={s} value={s}>
-                {fmtDayMonth(s)} {s.slice(0, 4)}
-              </option>
-            ))}
-          </select>
+          </div>
+        </div>
+        <div className="rd-search-box" style={{ maxWidth: 260, flex: "0 1 260px" }}>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+            <circle cx="11" cy="11" r="7" />
+            <path d="m20 20-3-3" />
+          </svg>
+          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Filter networks…" aria-label="Filter networks" />
         </div>
         <div className="rd-grow" />
         {focus ? (

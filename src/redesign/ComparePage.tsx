@@ -13,7 +13,7 @@ const SEG = ["#2BB0C4", "#4F86D6", "#3FB27F", "#E0A73C", "#D8617D", "#7C8AA0"];
 const gLabel = (g: number) => (g >= 1000 ? `${(g / 1000).toFixed(1)}T` : g > 0 ? `${g.toFixed(0)}G` : "—");
 
 export default function ComparePage() {
-  const { data, scoped, derived, scopeName } = useSnapshot();
+  const { data, scoped, derived, scopeName, asOf } = useSnapshot();
   const { search } = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
   const { bind, node: tipNode } = useTooltip();
@@ -44,7 +44,7 @@ export default function ComparePage() {
   const rows = useMemo(
     () =>
       asns.map((a) => {
-        const p = networkProfile(data, a);
+        const p = networkProfile(data, a, asOf);
         const cells = metros.map((metro) => {
           const ports = p.ports.filter((x) => x.metro === metro).sort((x, y) => y.capG - x.capG);
           const totalG = ports.reduce((s, x) => s + x.capG, 0);
@@ -62,7 +62,7 @@ export default function ComparePage() {
         return { asn: a, p, cells, rowMax };
       }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [data, asns.join(","), metros.join("|")]
+    [data, asns.join(","), metros.join("|"), asOf]
   );
 
   const suggestions = dirScoped.slice(0, 5).filter((s) => !asns.includes(s.asn));

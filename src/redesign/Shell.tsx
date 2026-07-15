@@ -30,6 +30,10 @@ interface SnapshotCtx {
   derived: Derived;
   scope: string[] | null;
   scopeName: string;
+  /** Global as-of snapshot date (the time slider). Equals the latest by default. */
+  asOf: string;
+  isLatestSnapshot: boolean;
+  snapshotsAll: string[];
 }
 
 const Ctx = createContext<SnapshotCtx | null>(null);
@@ -311,11 +315,41 @@ export default function Shell() {
     }
   };
 
+  // Global as-of snapshot for the time slider, stored in the URL as ?at=
+  const snapshotsAll = useMemo(
+    () => (state.data ? Array.from(new Set(state.data.snapshots)).sort() : []),
+    [state.data]
+  );
+  const latestSnapshot = snapshotsAll[snapshotsAll.length - 1] || "";
+  const atParam = searchParams.get("at");
+  const asOf = atParam && snapshotsAll.includes(atParam) ? atParam : latestSnapshot;
+  const isLatestSnapshot = asOf === latestSnapshot;
+  const setAsOf = (date: string) => {
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        if (date === latestSnapshot) next.delete("at");
+        else next.set("at", date);
+        return next;
+      },
+      { replace: true }
+    );
+  };
+
   const ctx = useMemo<SnapshotCtx | null>(() => {
     if (!state.data) return null;
     const scoped = filterByMetros(state.data, scope);
-    return { data: state.data, scoped, derived: derive(scoped), scope, scopeName: scopeLabel(scope) };
-  }, [state.data, scope]);
+    return {
+      data: state.data,
+      scoped,
+      derived: derive(scoped, asOf || undefined),
+      scope,
+      scopeName: scopeLabel(scope),
+      asOf,
+      isLatestSnapshot,
+      snapshotsAll,
+    };
+  }, [state.data, scope, asOf, isLatestSnapshot, snapshotsAll]);
 
   const meta = viewMeta(location.pathname);
   const latest = ctx?.derived.latest;
@@ -436,11 +470,27 @@ export default function Shell() {
           </div>
           <div className="rd-grow" />
           {allMetros.length ? <ScopePicker allMetros={allMetros} scope={scope} onChange={setScope} /> : null}
-          {latest ? (
-            <span className="rd-pill snap rd-num">
-              <span className="dot" />
-              <span className="cap">Snapshot</span> {fmtDate(latest)}
-            </span>
+          {snapshotsAll.length ? (
+            <div className={`rd-time${isLatestSnapshot ? "" : " hist"}`} title={isLatestSnapshot ? "Viewing the latest snapshot — drag to look back in time" : "Viewing history — every page renders as of this date"}>
+              <span className="cap">{isLatestSnapshot ? "Snapshot" : "As of"}</span>
+              <input
+                type="range"
+                min={0}
+                max={snapshotsAll.length - 1}
+                step={1}
+                value={snapshotsAll.indexOf(asOf)}
+                onChange={(e) => setAsOf(snapshotsAll[Number(e.target.value)])}
+                aria-label="As-of snapshot"
+              />
+              <b className="rd-num">{fmtDate(asOf)}</b>
+              {isLatestSnapshot ? (
+                <span className="dot" />
+              ) : (
+                <button className="rd-time-x" onClick={() => setAsOf(latestSnapshot)} title="Back to latest">
+                  ✕
+                </button>
+              )}
+            </div>
           ) : null}
           <Link to="/live" className="rd-btn">
             <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.8">

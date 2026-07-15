@@ -577,6 +577,98 @@ a.rd-pill:hover, button.rd-pill:hover { border-color: var(--accent); cursor: poi
 .rd-scope-item .nm { flex: 1; }
 .rd-scope-foot { margin-top: 10px; font-size: 11px; color: var(--faint); line-height: 1.45; }
 
+/* ---------- global time control ---------- */
+.rd-time {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  padding: 6px 12px;
+  border-radius: 9px;
+  border: 1px solid color-mix(in srgb, var(--present) 40%, transparent);
+  background: var(--surface);
+  font-size: 12.5px;
+  white-space: nowrap;
+}
+.rd-time.hist { border-color: color-mix(in srgb, var(--watch) 55%, transparent); background: var(--watch-bg); }
+.rd-time .cap {
+  color: var(--faint);
+  font-size: 10.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-weight: 700;
+}
+.rd-time.hist .cap { color: var(--watch); }
+.rd-time input[type="range"] { width: 110px; accent-color: var(--accent); cursor: pointer; height: 18px; }
+.rd-time.hist input[type="range"] { accent-color: var(--watch); }
+.rd-time b { font-weight: 700; }
+.rd-time .dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--present);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--present) 20%, transparent);
+}
+.rd-time-x {
+  border: none;
+  background: none;
+  color: var(--watch);
+  cursor: pointer;
+  font-size: 12px;
+  padding: 0 2px;
+  font-weight: 700;
+}
+
+/* ---------- dual-handle range slider ---------- */
+.rd-dualwrap { position: relative; height: 24px; width: 100%; min-width: 220px; }
+.rd-dualtrack {
+  position: absolute;
+  top: 10px;
+  left: 0;
+  right: 0;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+}
+.rd-dualfill { position: absolute; top: 10px; height: 4px; background: var(--accent); border-radius: 2px; }
+.rd-dualwrap input[type="range"] {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100%;
+  margin: 0;
+  height: 24px;
+  background: transparent;
+  pointer-events: none;
+  -webkit-appearance: none;
+  appearance: none;
+}
+.rd-dualwrap input[type="range"]::-webkit-slider-runnable-track { height: 24px; background: transparent; }
+.rd-dualwrap input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  pointer-events: auto;
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: 2.5px solid var(--surface);
+  box-shadow: 0 0 0 1px var(--border-strong);
+  margin-top: 4.5px;
+  cursor: grab;
+}
+.rd-dualwrap input[type="range"]::-moz-range-track { height: 24px; background: transparent; }
+.rd-dualwrap input[type="range"]::-moz-range-thumb {
+  pointer-events: auto;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: 2.5px solid var(--surface);
+  box-shadow: 0 0 0 1px var(--border-strong);
+  cursor: grab;
+}
+
 /* ---------- month slider ---------- */
 .rd-slider-bar {
   display: flex;

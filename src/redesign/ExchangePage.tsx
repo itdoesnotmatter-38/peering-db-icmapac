@@ -10,11 +10,11 @@ import { ExchangeMove, exchangeProfile, fmtMonth } from "./data";
    sense only in its full metro context. */
 
 export default function ExchangePage() {
-  const { data } = useSnapshot();
+  const { data, asOf } = useSnapshot();
   const { ixId } = useParams();
   const { search } = useLocation();
 
-  const profile = useMemo(() => exchangeProfile(data, Number(ixId)), [data, ixId]);
+  const profile = useMemo(() => exchangeProfile(data, Number(ixId), asOf), [data, ixId, asOf]);
 
   if (!profile) {
     return (

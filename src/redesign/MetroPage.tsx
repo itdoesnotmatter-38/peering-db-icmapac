@@ -10,12 +10,12 @@ import { METRO_CODES, fmtMonth, metroProfile } from "./data";
    together. Always shows the whole metro regardless of the global scope. */
 
 export default function MetroPage() {
-  const { data } = useSnapshot();
+  const { data, asOf } = useSnapshot();
   const { name } = useParams();
   const { search } = useLocation();
   const navigate = useNavigate();
 
-  const p = useMemo(() => metroProfile(data, name || ""), [data, name]);
+  const p = useMemo(() => metroProfile(data, name || "", asOf), [data, name, asOf]);
 
   if (!p.found) {
     return (

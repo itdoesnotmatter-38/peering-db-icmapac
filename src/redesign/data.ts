@@ -287,6 +287,14 @@ export interface Derived {
 
 const uniqSorted = (arr: string[]) => Array.from(new Set(arr)).sort();
 
+/** Snapshot timeline, optionally capped at an as-of date (never empty). */
+const snapshotsUpTo = (arr: string[], asOf?: string) => {
+  const all = uniqSorted(arr);
+  if (!asOf) return all;
+  const capped = all.filter((s) => s <= asOf);
+  return capped.length ? capped : all.slice(0, 1);
+};
+
 function metroRows(d: TrendsResponse, snap: string): MetroTrendRow[] {
   return d.metroTrend.filter((r) => r.snapshotDate === snap);
 }
@@ -311,8 +319,8 @@ function apacNetworkCap(d: TrendsResponse, snap: string): Map<number, { cap: num
   return m;
 }
 
-export function derive(d: TrendsResponse): Derived {
-  const snapshots = uniqSorted(d.snapshots);
+export function derive(d: TrendsResponse, asOf?: string): Derived {
+  const snapshots = snapshotsUpTo(d.snapshots, asOf);
   const latest = snapshots[snapshots.length - 1];
   const prev = snapshots.length > 1 ? snapshots[snapshots.length - 2] : latest;
 
@@ -699,8 +707,8 @@ export interface MovementHeat {
 }
 
 /** Metros × snapshot-transitions grid of net change, for the Movement heatmap. */
-export function movementHeatmap(fd: TrendsResponse): MovementHeat {
-  const snapshots = uniqSorted(fd.snapshots);
+export function movementHeatmap(fd: TrendsResponse, asOf?: string): MovementHeat {
+  const snapshots = snapshotsUpTo(fd.snapshots, asOf);
   const transitions: HeatTransition[] = snapshots.slice(1).map((to, i) => ({ from: snapshots[i], to }));
 
   const at = (snap: string) => {
@@ -1122,8 +1130,8 @@ export interface ExchangeProfile {
 
 /** Full snapshot-based profile for one exchange. Uses UNFILTERED data —
     an exchange page always shows its whole metro context. */
-export function exchangeProfile(d: TrendsResponse, ixId: number): ExchangeProfile | null {
-  const snapshots = uniqSorted(d.snapshots);
+export function exchangeProfile(d: TrendsResponse, ixId: number, asOf?: string): ExchangeProfile | null {
+  const snapshots = snapshotsUpTo(d.snapshots, asOf);
   const latest = snapshots[snapshots.length - 1];
   const prev = snapshots.length > 1 ? snapshots[snapshots.length - 2] : latest;
 
@@ -1267,8 +1275,8 @@ export interface MetroProfile {
 
 /** Everything about one metro, from the latest snapshot. UNFILTERED —
     a metro page always shows the whole metro regardless of global scope. */
-export function metroProfile(d: TrendsResponse, metro: string): MetroProfile {
-  const snapshots = uniqSorted(d.snapshots);
+export function metroProfile(d: TrendsResponse, metro: string, asOf?: string): MetroProfile {
+  const snapshots = snapshotsUpTo(d.snapshots, asOf);
   const latest = snapshots[snapshots.length - 1];
   const prev = snapshots.length > 1 ? snapshots[snapshots.length - 2] : latest;
 
@@ -1364,8 +1372,8 @@ export interface NetworkProfile {
 
 /** Snapshot-based profile for one ASN. Uses UNFILTERED data — a network's
     footprint spans metros regardless of the current scope. */
-export function networkProfile(d: TrendsResponse, asn: number): NetworkProfile {
-  const snapshots = uniqSorted(d.snapshots);
+export function networkProfile(d: TrendsResponse, asn: number, asOf?: string): NetworkProfile {
+  const snapshots = snapshotsUpTo(d.snapshots, asOf);
   const latest = snapshots[snapshots.length - 1];
   const prev = snapshots.length > 1 ? snapshots[snapshots.length - 2] : latest;
 

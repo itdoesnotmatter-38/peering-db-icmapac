@@ -26,13 +26,13 @@ interface FacRow {
 }
 
 export default function NetworkPage() {
-  const { data, scope, scopeName } = useSnapshot();
+  const { data, scope, scopeName, asOf } = useSnapshot();
   const { asn } = useParams();
   const { search } = useLocation();
   const navigate = useNavigate();
   const { bind, node: tipNode } = useTooltip();
 
-  const p = useMemo(() => networkProfile(data, Number(asn)), [data, asn]);
+  const p = useMemo(() => networkProfile(data, Number(asn), asOf), [data, asn, asOf]);
   const facMeta = useMemo(() => facilityMeta(data), [data]);
   const [watched, setWatched] = useState<boolean>(() => loadWatchlist().includes(Number(asn)));
 
