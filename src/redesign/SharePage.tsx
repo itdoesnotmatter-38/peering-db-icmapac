@@ -1,12 +1,15 @@
-import React from "react";
+import React, { useMemo } from "react";
+import { Link, useLocation } from "react-router-dom";
 import { useSnapshot } from "./Shell";
 import { Bar, Kpi, Panel } from "./bits";
-import { fmtMonth } from "./data";
+import { exchangesRanking, fmtMonth } from "./data";
 
 export default function SharePage() {
-  const { derived } = useSnapshot();
+  const { scoped, derived, scopeName } = useSnapshot();
   const { share, metros, latest, snapshots } = derived;
   const since = fmtMonth(snapshots[0]);
+  const { search } = useLocation();
+  const exchanges = useMemo(() => exchangesRanking(scoped, latest), [scoped, latest]);
 
   const apacDelta = share.apacSeries[share.apacSeries.length - 1] - share.apacSeries[0];
   const ppNode = (v: number) => (
@@ -25,7 +28,7 @@ export default function SharePage() {
     <>
       <div className="rd-kpis four">
         <Kpi
-          label="APAC IX-capacity share"
+          label={`${scopeName} IX-capacity share`}
           value={share.apacPct.toFixed(1)}
           unit="%"
           deltaNode={
@@ -50,7 +53,7 @@ export default function SharePage() {
           />
         ))}
         <Kpi
-          label="DC-presence share · APAC"
+          label={`DC-presence share · ${scopeName}`}
           value={share.dcPct.toFixed(1)}
           unit="%"
           deltaNode={<span className="rd-up">{share.dcRankNote || "—"}</span>}
@@ -74,7 +77,7 @@ export default function SharePage() {
             </div>
           ))}
         </Panel>
-        <Panel title="Facility operators — share of network presences" tag="APAC">
+        <Panel title="Facility operators — share of network presences" tag={scopeName}>
           {share.operators.map((o) => (
             <div className={`rd-shrow${o.isEquinix ? " eqxrow" : ""}`} key={o.org}>
               <span className="nm" style={o.isEquinix ? { color: "var(--equinix)" } : undefined} title={o.org}>
@@ -84,6 +87,32 @@ export default function SharePage() {
               <span className="pv rd-num">{o.pct.toFixed(1)}%</span>
               <span className="fr rd-num">{o.presences.toLocaleString()} presences</span>
             </div>
+          ))}
+        </Panel>
+      </div>
+
+      <div className="rd-section" style={{ marginTop: 24 }}>
+        <div className="rd-sec-head">
+          <h2>Exchanges in scope</h2>
+          <span className="note">Click an exchange for its full profile — members, movement, and competitive gaps</span>
+        </div>
+        <Panel title={`${exchanges.length} exchanges, by deployed capacity`} tag={scopeName}>
+          {exchanges.slice(0, 12).map((x) => (
+            <Link key={x.ixId} to={{ pathname: `/exchange/${x.ixId}`, search }} className="rd-rowlink">
+              <div className={`rd-shrow${x.isEquinix ? " eqxrow" : ""}`} style={{ gridTemplateColumns: "210px 1fr 54px 120px" }}>
+                <span className="nm" style={x.isEquinix ? { color: "var(--equinix)" } : undefined}>
+                  {x.name.length > 28 ? `${x.name.slice(0, 27)}…` : x.name}
+                  <span className="rd-cc" style={{ marginLeft: 7 }}>
+                    {x.metro}
+                  </span>
+                </span>
+                <Bar pct={(x.capT / (exchanges[0]?.capT || 1)) * 100} color={x.isEquinix ? "var(--equinix)" : "var(--border-strong)"} />
+                <span className="pv rd-num">{x.pctOfScope.toFixed(1)}%</span>
+                <span className="fr rd-num">
+                  {x.capT.toFixed(1)} T · {x.nets} nets
+                </span>
+              </div>
+            </Link>
           ))}
         </Panel>
       </div>

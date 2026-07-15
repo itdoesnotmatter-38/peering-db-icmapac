@@ -92,6 +92,78 @@ export function loadTrends(): Promise<TrendsResponse> {
   return trendsPromise;
 }
 
+/* ---------------- metro scope ---------------- */
+
+/** Airport-style short codes for URL state and compact labels. */
+export const METRO_CODES: Record<string, string> = {
+  Singapore: "SIN",
+  Jakarta: "JKT",
+  "Kuala Lumpur": "KUL",
+  Melbourne: "MEL",
+  Sydney: "SYD",
+  Mumbai: "BOM",
+  "Hong Kong": "HKG",
+  Bangkok: "BKK",
+  Manila: "MNL",
+  Chennai: "MAA",
+  Seoul: "SEL",
+  Tokyo: "TYO",
+  Osaka: "OSA",
+  Perth: "PER",
+};
+const CODE_TO_METRO: Record<string, string> = Object.fromEntries(
+  Object.entries(METRO_CODES).map(([k, v]) => [v, k])
+);
+
+export const SCOPE_PRESETS: Array<{ label: string; metros: string[] | null }> = [
+  { label: "All APAC", metros: null },
+  { label: "SG + HK", metros: ["Singapore", "Hong Kong"] },
+  { label: "Japan", metros: ["Tokyo", "Osaka"] },
+  { label: "ANZ", metros: ["Sydney", "Melbourne", "Perth"] },
+  { label: "India", metros: ["Mumbai", "Chennai"] },
+  { label: "SEA", metros: ["Singapore", "Jakarta", "Kuala Lumpur", "Bangkok", "Manila"] },
+];
+
+export function scopeToParam(metros: string[] | null): string {
+  if (!metros || !metros.length) return "";
+  return metros.map((m) => METRO_CODES[m] || m).join(",");
+}
+
+export function paramToScope(param: string | null): string[] | null {
+  if (!param) return null;
+  const metros = param
+    .split(",")
+    .map((c) => CODE_TO_METRO[c.trim().toUpperCase()])
+    .filter(Boolean);
+  return metros.length ? metros : null;
+}
+
+export function scopeLabel(metros: string[] | null): string {
+  if (!metros || !metros.length) return "All APAC";
+  const preset = SCOPE_PRESETS.find(
+    (p) => p.metros && p.metros.length === metros.length && p.metros.every((m) => metros.includes(m))
+  );
+  if (preset) return preset.label;
+  if (metros.length <= 3) return metros.map((m) => METRO_CODES[m] || m).join(" + ");
+  return `${metros.length} metros`;
+}
+
+/** Narrow every trend table to the selected metros. */
+export function filterByMetros(d: TrendsResponse, metros: string[] | null): TrendsResponse {
+  if (!metros || !metros.length) return d;
+  const set = new Set(metros);
+  const keep = <T extends { metro: string }>(rows: T[]) => rows.filter((r) => set.has(r.metro));
+  return {
+    ...d,
+    metros: d.metros.filter((m) => set.has(m.key)),
+    metroTrend: keep(d.metroTrend),
+    ixTrend: keep(d.ixTrend),
+    facilityTrend: keep(d.facilityTrend),
+    networkTrend: keep(d.networkTrend),
+    networkIxTrend: keep(d.networkIxTrend),
+  };
+}
+
 /* ---------------- shared helpers ---------------- */
 
 export const isEquinixIx = (name: string | null | undefined) =>
@@ -158,6 +230,7 @@ export interface MovementEntry {
 export interface UpgradeEntry {
   asn: number;
   name: string;
+  ixId: number;
   ixName: string;
   metro: string;
   fromG: number;
@@ -402,6 +475,7 @@ export function derive(d: TrendsResponse): Derived {
       upgrades.push({
         asn: r.asn,
         name: r.networkName,
+        ixId: r.ixId,
         ixName: r.ixName,
         metro: r.metro,
         fromG: mbpsToG(p?.capacityMbps),
@@ -667,6 +741,202 @@ export function movementFor(
       departuresN: departures.length,
       netT: entrantsT + upgradesT + downgradesT - departuresT,
     },
+  };
+}
+
+/* ---------------- exchanges ---------------- */
+
+export interface ExchangeRank {
+  ixId: number;
+  name: string;
+  metro: string;
+  capT: number;
+  nets: number;
+  isEquinix: boolean;
+  pctOfScope: number;
+}
+
+/** Exchanges in the (already scope-filtered) dataset, ranked by capacity. */
+export function exchangesRanking(fd: TrendsResponse, latest: string): ExchangeRank[] {
+  const agg = new Map<number, ExchangeRank>();
+  let total = 0;
+  for (const r of fd.ixTrend) {
+    if (r.snapshotDate !== latest) continue;
+    const capT = (r.capacityMbps || 0) / 1e6;
+    total += capT;
+    const e = agg.get(r.ixId) || {
+      ixId: r.ixId,
+      name: r.ixName,
+      metro: r.metro,
+      capT: 0,
+      nets: 0,
+      isEquinix: isEquinixIx(r.ixName),
+      pctOfScope: 0,
+    };
+    e.capT += capT;
+    e.nets = Math.max(e.nets, r.networkCount || 0);
+    agg.set(r.ixId, e);
+  }
+  return Array.from(agg.values())
+    .map((e) => ({ ...e, pctOfScope: total ? (e.capT / total) * 100 : 0 }))
+    .sort((a, b) => b.capT - a.capT);
+}
+
+export interface ExchangeMember {
+  asn: number;
+  name: string;
+  capG: number;
+}
+
+export interface ExchangeMove {
+  asn: number;
+  name: string;
+  capG: number;
+  fromG?: number;
+  toG?: number;
+}
+
+export interface ExchangeRival {
+  asn: number;
+  name: string;
+  bestRivalIx: string;
+  bestRivalG: number;
+  totalRivalG: number;
+}
+
+export interface ExchangeProfile {
+  ixId: number;
+  name: string;
+  metro: string;
+  isEquinix: boolean;
+  capT: number;
+  nets: number;
+  shareOfMetroPct: number;
+  metroRank: number;
+  metroIxCount: number;
+  capSeries: number[];
+  netSeries: number[];
+  snapshots: string[];
+  members: ExchangeMember[];
+  memberCount: number;
+  joined: ExchangeMove[];
+  left: ExchangeMove[];
+  upgraded: ExchangeMove[];
+  rivalsNotHere: ExchangeRival[];
+}
+
+/** Full snapshot-based profile for one exchange. Uses UNFILTERED data —
+    an exchange page always shows its whole metro context. */
+export function exchangeProfile(d: TrendsResponse, ixId: number): ExchangeProfile | null {
+  const snapshots = uniqSorted(d.snapshots);
+  const latest = snapshots[snapshots.length - 1];
+  const prev = snapshots.length > 1 ? snapshots[snapshots.length - 2] : latest;
+
+  const ixRows = d.ixTrend.filter((r) => r.ixId === ixId);
+  if (!ixRows.length) return null;
+  const latestRow = ixRows.find((r) => r.snapshotDate === latest) || ixRows[ixRows.length - 1];
+  const metro = latestRow.metro;
+  const name = latestRow.ixName;
+
+  const capSeries = snapshots.map((s) =>
+    ixRows.filter((r) => r.snapshotDate === s).reduce((a, r) => a + (r.capacityMbps || 0) / 1e6, 0)
+  );
+  const netSeries = snapshots.map((s) =>
+    ixRows.filter((r) => r.snapshotDate === s).reduce((a, r) => Math.max(a, r.networkCount || 0), 0)
+  );
+  const capT = capSeries[capSeries.length - 1];
+  const nets = netSeries[netSeries.length - 1];
+
+  /* metro context */
+  const metroIxs = new Map<number, number>();
+  for (const r of d.ixTrend) {
+    if (r.snapshotDate === latest && r.metro === metro) {
+      metroIxs.set(r.ixId, (metroIxs.get(r.ixId) || 0) + (r.capacityMbps || 0) / 1e6);
+    }
+  }
+  const metroTotal = Array.from(metroIxs.values()).reduce((a, b) => a + b, 0);
+  const ranked = Array.from(metroIxs.entries()).sort((a, b) => b[1] - a[1]);
+  const metroRank = ranked.findIndex(([id]) => id === ixId) + 1;
+
+  /* members latest vs prev */
+  const membersAt = (snap: string) => {
+    const m = new Map<number, { name: string; capG: number }>();
+    for (const r of d.networkIxTrend) {
+      if (r.snapshotDate !== snap || r.ixId !== ixId) continue;
+      const e = m.get(r.asn) || { name: r.networkName, capG: 0 };
+      e.capG += (r.capacityMbps || 0) / 1000;
+      e.name = r.networkName;
+      m.set(r.asn, e);
+    }
+    return m;
+  };
+  const cur = membersAt(latest);
+  const before = membersAt(prev);
+
+  const members: ExchangeMember[] = Array.from(cur.entries())
+    .map(([asn, e]) => ({ asn, name: e.name, capG: e.capG }))
+    .sort((a, b) => b.capG - a.capG);
+
+  const joined: ExchangeMove[] = [];
+  const left: ExchangeMove[] = [];
+  const upgraded: ExchangeMove[] = [];
+  cur.forEach((e, asn) => {
+    const p = before.get(asn);
+    if (!p) joined.push({ asn, name: e.name, capG: e.capG });
+    else if (e.capG - p.capG >= 100) upgraded.push({ asn, name: e.name, capG: e.capG - p.capG, fromG: p.capG, toG: e.capG });
+  });
+  before.forEach((e, asn) => {
+    if (!cur.has(asn)) left.push({ asn, name: e.name, capG: e.capG });
+  });
+  joined.sort((a, b) => b.capG - a.capG);
+  left.sort((a, b) => b.capG - a.capG);
+  upgraded.sort((a, b) => b.capG - a.capG);
+
+  /* competitive gap list: on other exchanges in this metro, not on this one */
+  const rivals = new Map<number, ExchangeRival>();
+  const isRouteServer = (n: string) => /route server|route-server|rs[0-9]* ?only/i.test(n);
+  for (const r of d.networkIxTrend) {
+    if (r.snapshotDate !== latest || r.metro !== metro || r.ixId === ixId) continue;
+    if (cur.has(r.asn)) continue;
+    if (isRouteServer(r.networkName || "")) continue; // infrastructure ASNs aren't prospects
+    const g = (r.capacityMbps || 0) / 1000;
+    const e = rivals.get(r.asn) || {
+      asn: r.asn,
+      name: r.networkName,
+      bestRivalIx: r.ixName,
+      bestRivalG: g,
+      totalRivalG: 0,
+    };
+    e.totalRivalG += g;
+    if (g > e.bestRivalG) {
+      e.bestRivalG = g;
+      e.bestRivalIx = r.ixName;
+    }
+    rivals.set(r.asn, e);
+  }
+  const rivalsNotHere = Array.from(rivals.values())
+    .sort((a, b) => b.totalRivalG - a.totalRivalG)
+    .slice(0, 10);
+
+  return {
+    ixId,
+    name,
+    metro,
+    isEquinix: isEquinixIx(name),
+    capT,
+    nets,
+    shareOfMetroPct: metroTotal ? (capT / metroTotal) * 100 : 0,
+    metroRank,
+    metroIxCount: ranked.length,
+    capSeries,
+    netSeries,
+    snapshots,
+    members,
+    memberCount: members.length,
+    joined,
+    left,
+    upgraded,
+    rivalsNotHere,
   };
 }
 

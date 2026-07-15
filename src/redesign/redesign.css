@@ -539,6 +539,65 @@ a.rd-pill:hover, button.rd-pill:hover { border-color: var(--accent); cursor: poi
 }
 .rd-x:hover { color: var(--gap); background: var(--gap-bg); }
 
+/* ---------- scope picker ---------- */
+.rd-scope { position: relative; }
+.rd-scope-pop {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 8px);
+  z-index: 30;
+  width: 350px;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: 12px;
+  box-shadow: var(--shadow);
+  padding: 12px;
+}
+.rd-scope-presets { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+.rd-scope-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 2px; }
+.rd-scope-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 7px;
+  cursor: pointer;
+  font-size: 12.5px;
+  color: var(--muted);
+}
+.rd-scope-item:hover { background: var(--surface-2); }
+.rd-scope-item.on { color: var(--text); }
+.rd-scope-item.on .nm { font-weight: 700; }
+.rd-scope-item input { accent-color: var(--accent); }
+.rd-scope-item .nm { flex: 1; }
+.rd-scope-foot { margin-top: 10px; font-size: 11px; color: var(--faint); line-height: 1.45; }
+
+/* ---------- exchange profile ---------- */
+.rd-crumb {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--muted);
+  text-decoration: none;
+  margin-bottom: 12px;
+}
+.rd-crumb:hover { color: var(--accent); }
+.rd-xhead { display: flex; align-items: center; gap: 12px; margin-bottom: 18px; flex-wrap: wrap; }
+.rd-xhead h1 { font-size: 22px; margin: 0; font-weight: 700; letter-spacing: -0.01em; }
+.rd-badge-eqx {
+  background: var(--equinix);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 3px 9px;
+  border-radius: 5px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.rd-rowlink { text-decoration: none; color: inherit; display: block; }
+.rd-rowlink:hover { color: inherit; }
+
 /* ---------- responsive ---------- */
 @media (max-width: 1080px) {
   .rd-app { grid-template-columns: 64px 1fr; }

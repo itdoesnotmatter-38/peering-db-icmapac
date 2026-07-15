@@ -1,14 +1,21 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
+import { Link, useLocation } from "react-router-dom";
 import { useSnapshot } from "./Shell";
 import { Panel } from "./bits";
 import { fmtMonth, movementFor } from "./data";
 
 export default function MovementPage() {
-  const { data, derived } = useSnapshot();
+  const { scoped, derived } = useSnapshot();
   const { metros, latest, prev, upgrades } = derived;
+  const { search } = useLocation();
   const [metro, setMetro] = useState(metros[0]?.metro || "Singapore");
 
-  const mv = useMemo(() => movementFor(data, latest, prev, metro), [data, latest, prev, metro]);
+  /* keep the focused metro valid when the global scope changes */
+  useEffect(() => {
+    if (!metros.some((m) => m.metro === metro) && metros.length) setMetro(metros[0].metro);
+  }, [metros, metro]);
+
+  const mv = useMemo(() => movementFor(scoped, latest, prev, metro), [scoped, latest, prev, metro]);
   const wf = mv.waterfall;
   const wfMax = Math.max(wf.entrantsT, wf.upgradesT, Math.abs(wf.downgradesT), wf.departuresT, 0.001);
 
@@ -49,7 +56,7 @@ export default function MovementPage() {
   return (
     <>
       <div className="rd-chips">
-        {metros.slice(0, 8).map((m) => (
+        {metros.map((m) => (
           <button key={m.metro} className={`rd-chip${m.metro === metro ? " on" : ""}`} onClick={() => setMetro(m.metro)}>
             {m.metro}
           </button>
@@ -107,7 +114,11 @@ export default function MovementPage() {
               <span className="who">
                 <span className="n">{u.name}</span>
                 <span className="w rd-num">
-                  AS{u.asn} · {u.ixName} · {u.metro}
+                  AS{u.asn} ·{" "}
+                  <Link to={{ pathname: `/exchange/${u.ixId}`, search }} style={{ color: "var(--accent)" }}>
+                    {u.ixName}
+                  </Link>{" "}
+                  · {u.metro}
                 </span>
                 {u.isEquinix ? <span className="rd-tagx">Equinix</span> : null}
               </span>

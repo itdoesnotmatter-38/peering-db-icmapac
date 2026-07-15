@@ -4,14 +4,14 @@ import { Bar, Delta, Kpi, Panel } from "./bits";
 import { fmtDate, fmtMonth, loadWatchlist, saveWatchlist, watchRows } from "./data";
 
 export default function OverviewPage() {
-  const { data, derived } = useSnapshot();
+  const { scoped, derived, scopeName } = useSnapshot();
   const { totals, deltas, capSeries, netSeries, metros, metroCapMovers, networkMovers, latest, prev } = derived;
   const vs = fmtMonth(prev);
 
   /* ---- watchlist ---- */
   const [watch, setWatch] = useState<number[]>(() => loadWatchlist());
   const [draft, setDraft] = useState("");
-  const rows = useMemo(() => watchRows(data, latest, prev, watch), [data, latest, prev, watch]);
+  const rows = useMemo(() => watchRows(scoped, latest, prev, watch), [scoped, latest, prev, watch]);
   const addWatch = () => {
     const asn = Number(draft.replace(/^as/i, "").trim());
     if (!Number.isFinite(asn) || asn <= 0 || watch.includes(asn)) return;
@@ -51,7 +51,7 @@ export default function OverviewPage() {
 
       <div className="rd-section">
         <div className="rd-sec-head">
-          <h2>APAC landscape</h2>
+          <h2>{scopeName} landscape</h2>
           <span className="note rd-num">
             Baseline: {fmtDate(latest)} snapshot · deltas vs {fmtDate(prev)}
           </span>
@@ -134,7 +134,7 @@ export default function OverviewPage() {
             </button>
           </div>
         </div>
-        <Panel title="Pinned networks — APAC footprint" tag={fmtMonth(latest)}>
+        <Panel title={`Pinned networks — ${scopeName} footprint`} tag={fmtMonth(latest)}>
           <div className="rd-wl-head">
             <span>Network</span>
             <span className="c">Metros</span>
