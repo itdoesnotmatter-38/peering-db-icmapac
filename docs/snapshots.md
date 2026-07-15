@@ -4,14 +4,17 @@
 This system captures a global PeeringDB snapshot on the last day of each month in Singapore time.
 
 Storage split:
-- Raw records in Vercel Blob (`net`, `org`)
+- Raw records in Vercel Blob (`net`, `org`, `ix`, `fac`, `netixlan`, `netfac`)
 - Aggregates in Postgres for trend charts
 
 ## Scheduler
 Primary scheduler is GitHub Actions:
 - Workflow: `.github/workflows/monthly-global-snapshot.yml`
-- Trigger: `27-31` each month at `16:10 UTC` (which is `00:10` Singapore)
+- Trigger: `27-31` each month at `00:10`, `06:10`, `12:10`, and `18:10 UTC`.
 - The runner skips unless it is the last Singapore calendar day of the month.
+- Failed/error rows are retryable; completed rows skip later attempts.
+- Backstop: `.github/workflows/monthly-snapshot-backstop.yml` retries the
+  previous Singapore month-end on the second day of the next month.
 
 ## Required GitHub repository secrets
 Configure these in GitHub repository settings:
@@ -23,6 +26,10 @@ Configure these in GitHub repository settings:
 Raw files written to Blob prefix `${SNAPSHOT_BLOB_PREFIX}/${snapshot_date}`:
 - `net.jsonl.gz`
 - `org.jsonl.gz`
+- `ix.jsonl.gz`
+- `fac.jsonl.gz`
+- `netixlan.jsonl.gz`
+- `netfac.jsonl.gz`
 - `networks.csv`
 - `manifest.json`
 
@@ -38,9 +45,10 @@ Defaults are used if not provided:
 - `SNAPSHOT_BLOB_ACCESS=public`
 - `SNAPSHOT_PAGE_LIMIT=5000`
 - `SNAPSHOT_MAX_PAGES=5000`
-- `SNAPSHOT_PAGE_DELAY_MS=150`
-- `PEERINGDB_MAX_RETRIES=50`
-- `PEERINGDB_MAX_RETRY_TIME_MS=1200000`
+- `SNAPSHOT_PAGE_DELAY_MS=150` (GitHub workflows currently override this to `3000`)
+- `PEERINGDB_MAX_RETRIES=50` (GitHub workflows currently override this to `3000`)
+- `PEERINGDB_MAX_DELAY_MS=120000`
+- `PEERINGDB_MAX_RETRY_TIME_MS=1200000` (GitHub workflows currently use `18000000`)
 
 ## Manual execution
 From CLI:
