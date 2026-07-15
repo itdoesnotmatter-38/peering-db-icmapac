@@ -2,7 +2,7 @@ import React, { useMemo, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { useSnapshot } from "./Shell";
 import { Bar, Panel } from "./bits";
-import { exchangesRanking, fmtMonth } from "./data";
+import { exchangesRanking, fmtMonth, tokenMatch } from "./data";
 
 /* Browsable directory of every exchange in scope — search, ranked by
    deployed capacity, Equinix pinned, click through to the full profile. */
@@ -15,9 +15,8 @@ export default function ExchangesPage() {
 
   const all = useMemo(() => exchangesRanking(scoped, latest), [scoped, latest]);
   const filtered = useMemo(() => {
-    const s = q.trim().toLowerCase();
-    if (!s) return all;
-    return all.filter((x) => x.name.toLowerCase().includes(s) || x.metro.toLowerCase().includes(s) || String(x.ixId) === s);
+    if (!q.trim()) return all;
+    return all.filter((x) => tokenMatch(q, `${x.name} ${x.metro}`, x.ixId));
   }, [all, q]);
 
   return (

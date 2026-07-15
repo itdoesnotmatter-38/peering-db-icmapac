@@ -153,6 +153,17 @@ export function filterByMetros(d: TrendsResponse, metros: string[] | null): Tren
 
 /* ---------------- shared helpers ---------------- */
 
+/** Multi-term OR matching: "akamai fastly 13335" hits a row when ANY
+    space/comma-separated token matches the haystack or the ASN/id.
+    An empty query matches everything. */
+export function tokenMatch(query: string, haystack: string, id?: number | string): boolean {
+  const tokens = query.toLowerCase().split(/[\s,]+/).filter(Boolean);
+  if (!tokens.length) return true;
+  const h = (haystack || "").toLowerCase();
+  const a = id !== undefined && id !== null ? String(id) : "";
+  return tokens.some((t) => h.includes(t) || (a && a.includes(t.replace(/^as/, ""))));
+}
+
 export const isEquinixIx = (name: string | null | undefined) =>
   String(name || "").toLowerCase().includes("equinix");
 

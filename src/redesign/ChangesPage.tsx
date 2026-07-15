@@ -2,7 +2,7 @@ import React, { useMemo, useState } from "react";
 import { Link, useLocation, useSearchParams } from "react-router-dom";
 import { useSnapshot } from "./Shell";
 import { DualRange, Kpi, useTooltip } from "./bits";
-import { METRO_CODES, ShiftStatus, fmtDayMonth, marketChanges, shiftColumns } from "./data";
+import { METRO_CODES, ShiftStatus, fmtDayMonth, marketChanges, shiftColumns, tokenMatch } from "./data";
 
 /* Market-changes deep dive: a network × exchange matrix of port-capacity
    change between two snapshots. Cell = how much a network grew/shrank its
@@ -73,12 +73,10 @@ export default function ChangesPage() {
   const mc = useMemo(() => marketChanges(scoped, from, to), [scoped, from, to]);
 
   const filtered = useMemo(() => {
-    const s = q.trim().toLowerCase();
-    const asnq = s.replace(/^as/, "");
     const rows = mc.networks
       .filter((n) => (filter === "all" ? true : n.status === filter))
       .filter((n) => (focus ? n.metro === focus : true))
-      .filter((n) => (!s ? true : n.name.toLowerCase().includes(s) || String(n.asn).includes(asnq)));
+      .filter((n) => tokenMatch(q, n.name, n.asn));
     return rows.slice(0, 16);
   }, [mc, filter, focus, q]);
 

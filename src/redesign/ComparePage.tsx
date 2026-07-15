@@ -71,7 +71,7 @@ export default function ComparePage() {
     <>
       <div className="rd-slider-bar" style={{ alignItems: "center" }}>
         <div style={{ minWidth: 300, flex: 1, maxWidth: 420 }}>
-          <NetworkTypeahead options={dir} onPick={(a) => !asns.includes(a) && setAsns([...asns, a])} exclude={new Set(asns)} />
+          <NetworkTypeahead options={dir} onPick={(a) => !asns.includes(a) && setAsns([...asns, a])} onPickMany={(list) => setAsns(Array.from(new Set([...asns, ...list])))} exclude={new Set(asns)} />
         </div>
         <div className="rd-chips" style={{ marginBottom: 0 }}>
           {asns.map((a) => {

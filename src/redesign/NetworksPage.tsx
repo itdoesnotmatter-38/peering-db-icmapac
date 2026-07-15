@@ -2,7 +2,7 @@ import React, { useMemo, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { useSnapshot } from "./Shell";
 import { Bar, Panel } from "./bits";
-import { fmtMonth, networksDirectory } from "./data";
+import { fmtMonth, networksDirectory, tokenMatch } from "./data";
 
 /* Browsable directory of every network in scope — search by name or ASN,
    ranked by deployed capacity, click through to the full profile. */
@@ -15,10 +15,8 @@ export default function NetworksPage() {
 
   const all = useMemo(() => networksDirectory(scoped, latest), [scoped, latest]);
   const filtered = useMemo(() => {
-    const s = q.trim().toLowerCase();
-    if (!s) return all;
-    const asnq = s.replace(/^as/, "");
-    return all.filter((n) => n.name.toLowerCase().includes(s) || String(n.asn) === asnq || String(n.asn).includes(asnq));
+    if (!q.trim()) return all;
+    return all.filter((n) => tokenMatch(q, n.name, n.asn));
   }, [all, q]);
 
   const shown = filtered.slice(0, 60);

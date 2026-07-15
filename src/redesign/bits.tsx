@@ -1,4 +1,5 @@
 import React, { useCallback, useState } from "react";
+import { tokenMatch } from "./data";
 
 /* One shared, mouse-following tooltip for heatmap cells. Render `node`
    once at the page root; spread `bind(content)` onto each hoverable cell. */
@@ -123,33 +124,64 @@ export function Panel({ title, tag, children }: { title: string; tag?: string; c
   );
 }
 
-/* Type-ahead for picking networks by name or ASN. Pass the directory
-   options; Enter with a raw number falls through as an ASN. */
+/* Type-ahead for picking networks by name or ASN. Multi-term friendly:
+   "akamai fastly 13335" OR-matches the suggestions, and Enter adds the
+   best match for EVERY term at once (via onPickMany when provided).
+   A raw number with no match falls through as an ASN. */
 export function NetworkTypeahead({
   options,
   onPick,
+  onPickMany,
   placeholder,
   exclude,
 }: {
   options: Array<{ asn: number; name: string; type: string; capT: number }>;
   onPick: (asn: number) => void;
+  onPickMany?: (asns: number[]) => void;
   placeholder?: string;
   exclude?: Set<number>;
 }) {
   const [q, setQ] = useState("");
   const [open, setOpen] = useState(false);
   const matches = React.useMemo(() => {
-    const s = q.trim().toLowerCase();
+    const s = q.trim();
     if (!s) return [];
-    const asnq = s.replace(/^as/, "");
     return options
       .filter((o) => !exclude?.has(o.asn))
-      .filter((o) => o.name.toLowerCase().includes(s) || String(o.asn).includes(asnq))
+      .filter((o) => tokenMatch(s, o.name, o.asn))
       .slice(0, 8);
   }, [q, options, exclude]);
 
   const pick = (asn: number) => {
     onPick(asn);
+    setQ("");
+    setOpen(false);
+  };
+
+  // Enter with several terms: best (largest) match per term, added together
+  const pickFromQuery = () => {
+    const tokens = q.toLowerCase().split(/[\s,]+/).filter(Boolean);
+    if (!tokens.length) return;
+    if (tokens.length === 1) {
+      if (matches.length) pick(matches[0].asn);
+      else {
+        const n = Number(tokens[0].replace(/^as/, ""));
+        if (Number.isFinite(n) && n > 0) pick(n);
+      }
+      return;
+    }
+    const picks: number[] = [];
+    for (const t of tokens) {
+      const m = options.find((o) => !exclude?.has(o.asn) && !picks.includes(o.asn) && tokenMatch(t, o.name, o.asn));
+      if (m) picks.push(m.asn);
+      else {
+        const n = Number(t.replace(/^as/, ""));
+        if (Number.isFinite(n) && n > 0 && !picks.includes(n)) picks.push(n);
+      }
+    }
+    if (!picks.length) return;
+    if (onPickMany) onPickMany(picks);
+    else picks.forEach(onPick);
     setQ("");
     setOpen(false);
   };
@@ -171,13 +203,7 @@ export function NetworkTypeahead({
           onFocus={() => setOpen(true)}
           onBlur={() => setTimeout(() => setOpen(false), 150)}
           onKeyDown={(e) => {
-            if (e.key === "Enter") {
-              if (matches.length) pick(matches[0].asn);
-              else {
-                const n = Number(q.replace(/^as/i, "").trim());
-                if (Number.isFinite(n) && n > 0) pick(n);
-              }
-            }
+            if (e.key === "Enter") pickFromQuery();
             if (e.key === "Escape") setOpen(false);
           }}
         />
