@@ -1076,6 +1076,10 @@ export interface NetworkDirEntry {
   capT: number;
   metros: number;
   ports: number;
+  /** month-over-month capacity change (Tbps) */
+  dCapT: number;
+  /** share of this network's IX capacity on Equinix exchanges */
+  eqxPct: number;
 }
 
 /** All networks in the scope-filtered dataset, aggregated for the directory. */
@@ -1091,8 +1095,31 @@ export function networksDirectory(fd: TrendsResponse, latest: string): NetworkDi
     e.type = r.networkType || e.type;
     agg.set(r.asn, e);
   }
+  const all = uniqSorted(fd.snapshots);
+  const prev = all[all.indexOf(latest) - 1] ?? latest;
+  const prevCap = new Map<number, number>();
+  if (prev !== latest) {
+    for (const r of fd.networkTrend) {
+      if (r.snapshotDate === prev) prevCap.set(r.asn, (prevCap.get(r.asn) || 0) + (r.capacityMbps || 0));
+    }
+  }
+  const eqxCap = new Map<number, number>();
+  for (const r of fd.networkIxTrend) {
+    if (r.snapshotDate === latest && isEquinixIx(r.ixName)) {
+      eqxCap.set(r.asn, (eqxCap.get(r.asn) || 0) + (r.capacityMbps || 0));
+    }
+  }
   return Array.from(agg.entries())
-    .map(([asn, e]) => ({ asn, name: e.name, type: e.type, capT: e.cap / 1e6, metros: e.metros.size, ports: e.ix }))
+    .map(([asn, e]) => ({
+      asn,
+      name: e.name,
+      type: e.type,
+      capT: e.cap / 1e6,
+      metros: e.metros.size,
+      ports: e.ix,
+      dCapT: prev !== latest ? (e.cap - (prevCap.get(asn) || 0)) / 1e6 : 0,
+      eqxPct: e.cap > 0 ? Math.min(100, ((eqxCap.get(asn) || 0) / e.cap) * 100) : 0,
+    }))
     .sort((a, b) => b.capT - a.capT);
 }
 

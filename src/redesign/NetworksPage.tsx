@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { useSnapshot } from "./Shell";
-import { Bar, Panel } from "./bits";
+import { Panel } from "./bits";
 import { fmtMonth, networksDirectory, tokenMatch } from "./data";
 
 /* Browsable directory of every network in scope — search by name or ASN,
@@ -38,9 +38,17 @@ export default function NetworksPage() {
       </div>
 
       <Panel title={q ? "Search results" : "Networks by deployed capacity"} tag={fmtMonth(latest)}>
+        <div className="rd-dirhead">
+          <span />
+          <span>Network</span>
+          <span className="c">Capacity</span>
+          <span className="c">Δ MoM</span>
+          <span className="c">on Equinix</span>
+          <span className="c">Metros</span>
+        </div>
         {shown.map((n, i) => (
           <Link key={n.asn} to={{ pathname: `/net/${n.asn}`, search }} className="rd-rowlink">
-            <div className="rd-dirrow">
+            <div className="rd-dirrow facts">
               <span className="rk rd-num">{q ? "" : i + 1}</span>
               <span className="nm">
                 {n.name}
@@ -49,11 +57,16 @@ export default function NetworksPage() {
                 </span>
                 <span className="ty">{n.type}</span>
               </span>
-              <Bar pct={(n.capT / (all[0]?.capT || 1)) * 100} />
-              <span className="pv rd-num">{n.capT.toFixed(1)}T</span>
-              <span className="meta rd-num">
-                {n.metros} metro{n.metros === 1 ? "" : "s"}
+              <span className="pv rd-num">{n.capT >= 0.05 ? `${n.capT.toFixed(1)}T` : n.capT > 0 ? `${(n.capT * 1000).toFixed(0)}G` : "—"}</span>
+              <span className={`pv rd-num ${n.dCapT > 0.005 ? "rd-up" : n.dCapT < -0.005 ? "rd-down" : "rd-flat"}`}>
+                {Math.abs(n.dCapT) < 0.005
+                  ? "·"
+                  : `${n.dCapT > 0 ? "+" : "−"}${Math.abs(n.dCapT) >= 1 ? Math.abs(n.dCapT).toFixed(1) + "T" : (Math.abs(n.dCapT) * 1000).toFixed(0) + "G"}`}
               </span>
+              <span className="pv rd-num" style={n.eqxPct > 0 ? { color: "var(--equinix)" } : { color: "var(--faint)", fontWeight: 400 }}>
+                {n.capT > 0 ? `${n.eqxPct.toFixed(0)}%` : "—"}
+              </span>
+              <span className="meta rd-num">{n.metros}</span>
             </div>
           </Link>
         ))}
