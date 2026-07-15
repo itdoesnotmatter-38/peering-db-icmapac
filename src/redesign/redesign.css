@@ -262,6 +262,11 @@ a.rd-pill:hover, button.rd-pill:hover { border-color: var(--accent); cursor: poi
   font-family: var(--ui);
   text-decoration: none;
 }
+.rd-btn.on {
+  border-color: color-mix(in srgb, var(--watch) 50%, transparent);
+  background: var(--watch-bg);
+  color: var(--watch);
+}
 
 /* ---------- KPI cards ---------- */
 .rd-kpis { display: grid; grid-template-columns: repeat(5, 1fr); gap: 14px; margin-bottom: 22px; }

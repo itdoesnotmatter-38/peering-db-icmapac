@@ -1158,6 +1158,135 @@ export function exchangeProfile(d: TrendsResponse, ixId: number): ExchangeProfil
   };
 }
 
+/* ---------------- network profile ---------------- */
+
+export interface NetworkMetroFootprint {
+  metro: string;
+  country: string;
+  capT: number;
+  ixCount: number;
+  facCount: number;
+}
+
+export interface NetworkPort {
+  ixId: number;
+  ixName: string;
+  metro: string;
+  isEquinix: boolean;
+  capG: number;
+  dCapG: number;
+}
+
+export interface NetworkProfile {
+  asn: number;
+  name: string;
+  type: string;
+  found: boolean;
+  totalCapT: number;
+  dCapT: number;
+  metroCount: number;
+  ixCount: number;
+  facCount: number;
+  snapshots: string[];
+  capSeries: number[];
+  footprint: NetworkMetroFootprint[];
+  ports: NetworkPort[];
+  joined: NetworkPort[];
+  left: NetworkPort[];
+  upgraded: NetworkPort[];
+}
+
+/** Snapshot-based profile for one ASN. Uses UNFILTERED data — a network's
+    footprint spans metros regardless of the current scope. */
+export function networkProfile(d: TrendsResponse, asn: number): NetworkProfile {
+  const snapshots = uniqSorted(d.snapshots);
+  const latest = snapshots[snapshots.length - 1];
+  const prev = snapshots.length > 1 ? snapshots[snapshots.length - 2] : latest;
+
+  const nRows = d.networkTrend.filter((r) => r.asn === asn);
+  const name = nRows.find((r) => r.snapshotDate === latest)?.networkName || nRows[nRows.length - 1]?.networkName || `AS${asn}`;
+  const type = nRows.find((r) => r.snapshotDate === latest)?.networkType || nRows[nRows.length - 1]?.networkType || "—";
+
+  const capSeries = snapshots.map((s) =>
+    nRows.filter((r) => r.snapshotDate === s).reduce((a, r) => a + mbpsToT(r.capacityMbps), 0)
+  );
+
+  // per-metro footprint (latest)
+  const metroCountry = new Map(d.metros.map((m) => [m.key, m.country]));
+  const footprint: NetworkMetroFootprint[] = nRows
+    .filter((r) => r.snapshotDate === latest)
+    .map((r) => ({
+      metro: r.metro,
+      country: metroCountry.get(r.metro) || "",
+      capT: mbpsToT(r.capacityMbps),
+      ixCount: r.ixCount || 0,
+      facCount: r.facilityCount || 0,
+    }))
+    .sort((a, b) => b.capT - a.capT);
+
+  // per-IX ports (latest vs prev)
+  const portsAt = (snap: string) => {
+    const m = new Map<number, NetworkPort>();
+    for (const r of d.networkIxTrend) {
+      if (r.snapshotDate !== snap || r.asn !== asn) continue;
+      const e = m.get(r.ixId) || {
+        ixId: r.ixId,
+        ixName: r.ixName || `IX ${r.ixId}`,
+        metro: r.metro,
+        isEquinix: isEquinixIx(r.ixName),
+        capG: 0,
+        dCapG: 0,
+      };
+      e.capG += (r.capacityMbps || 0) / 1000;
+      m.set(r.ixId, e);
+    }
+    return m;
+  };
+  const cur = portsAt(latest);
+  const before = portsAt(prev);
+  const ports: NetworkPort[] = Array.from(cur.values())
+    .map((p) => ({ ...p, dCapG: p.capG - (before.get(p.ixId)?.capG || 0) }))
+    .sort((a, b) => b.capG - a.capG);
+
+  const joined: NetworkPort[] = [];
+  const left: NetworkPort[] = [];
+  const upgraded: NetworkPort[] = [];
+  cur.forEach((p, id) => {
+    const b = before.get(id);
+    if (!b) joined.push({ ...p, dCapG: p.capG });
+    else if (p.capG - b.capG >= 100) upgraded.push({ ...p, dCapG: p.capG - b.capG });
+  });
+  before.forEach((p, id) => {
+    if (!cur.has(id)) left.push({ ...p, dCapG: -p.capG });
+  });
+  joined.sort((a, b) => b.capG - a.capG);
+  left.sort((a, b) => b.capG - a.capG);
+  upgraded.sort((a, b) => b.dCapG - a.dCapG);
+
+  const totalCapT = capSeries[capSeries.length - 1] || 0;
+  const dCapT = totalCapT - (capSeries[capSeries.length - 2] ?? totalCapT);
+  const facCount = footprint.reduce((a, f) => a + f.facCount, 0);
+
+  return {
+    asn,
+    name,
+    type,
+    found: footprint.length > 0 || ports.length > 0,
+    totalCapT,
+    dCapT,
+    metroCount: footprint.length,
+    ixCount: ports.length,
+    facCount,
+    snapshots,
+    capSeries,
+    footprint,
+    ports,
+    joined,
+    left,
+    upgraded,
+  };
+}
+
 /* ---------------- watchlist ---------------- */
 
 const WATCHLIST_KEY = "pdb-watchlist-asns";

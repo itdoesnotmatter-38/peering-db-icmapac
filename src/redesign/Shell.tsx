@@ -74,6 +74,9 @@ function viewMeta(pathname: string): { title: string; desc: string } {
   if (pathname.startsWith("/exchange")) {
     return { title: "Exchange profile", desc: "Snapshot-based view of a single exchange in its metro context" };
   }
+  if (pathname.startsWith("/net")) {
+    return { title: "Network profile", desc: "Snapshot-based footprint of one network across metros, exchanges, and facilities" };
+  }
   const map: Record<string, { title: string; desc: string }> = {
     "/": { title: "Interconnection overview", desc: "Monthly snapshot baseline — loads instantly, refresh live on demand" },
     "/insights": { title: "Insights", desc: "What moved, what's missing — computed from the last two snapshots" },

@@ -85,18 +85,20 @@ export default function ExchangePage() {
         <div className="rd-split">
           <Panel title="Members by port capacity" tag={`top 12 of ${p.memberCount}`}>
             {p.members.slice(0, 12).map((m) => (
-              <div className="rd-shrow" key={m.asn} style={{ gridTemplateColumns: "210px 1fr 90px" }}>
-                <span className="nm">
-                  {m.name.length > 26 ? `${m.name.slice(0, 25)}…` : m.name}
-                  <span className="rd-cc" style={{ marginLeft: 7 }}>
-                    AS{m.asn}
+              <Link key={m.asn} to={{ pathname: `/net/${m.asn}`, search }} className="rd-rowlink">
+                <div className="rd-shrow" style={{ gridTemplateColumns: "210px 1fr 90px" }}>
+                  <span className="nm">
+                    {m.name.length > 26 ? `${m.name.slice(0, 25)}…` : m.name}
+                    <span className="rd-cc" style={{ marginLeft: 7 }}>
+                      AS{m.asn}
+                    </span>
                   </span>
-                </span>
-                <Bar pct={(m.capG / (p.members[0]?.capG || 1)) * 100} color={p.isEquinix ? "var(--equinix)" : "var(--accent)"} />
-                <span className="fr rd-num" style={{ fontWeight: 700, color: "var(--text)" }}>
-                  {m.capG >= 1000 ? `${(m.capG / 1000).toFixed(1)} T` : `${m.capG.toFixed(0)} G`}
-                </span>
-              </div>
+                  <Bar pct={(m.capG / (p.members[0]?.capG || 1)) * 100} color={p.isEquinix ? "var(--equinix)" : "var(--accent)"} />
+                  <span className="fr rd-num" style={{ fontWeight: 700, color: "var(--text)" }}>
+                    {m.capG >= 1000 ? `${(m.capG / 1000).toFixed(1)} T` : `${m.capG.toFixed(0)} G`}
+                  </span>
+                </div>
+              </Link>
             ))}
           </Panel>
 
@@ -128,7 +130,7 @@ export default function ExchangePage() {
         </div>
         <Panel title={`Top ${p.rivalsNotHere.length} networks absent from ${p.name}`} tag={p.metro}>
           {p.rivalsNotHere.map((r) => (
-            <div className="rd-dumb" key={r.asn} style={{ gridTemplateColumns: "1fr 210px 150px" }}>
+            <Link className="rd-rowlink rd-dumb" key={r.asn} to={{ pathname: `/net/${r.asn}`, search }} style={{ gridTemplateColumns: "1fr 210px 150px" }}>
               <span className="who">
                 <span className="n">{r.name}</span>
                 <span className="w rd-num">AS{r.asn} · largest port: {r.bestRivalIx}</span>
@@ -144,7 +146,7 @@ export default function ExchangePage() {
               <span className="amt rd-num">
                 {r.totalRivalG >= 1000 ? `${(r.totalRivalG / 1000).toFixed(1)} T` : `${r.totalRivalG.toFixed(0)} G`} elsewhere
               </span>
-            </div>
+            </Link>
           ))}
           {!p.rivalsNotHere.length ? (
             <div style={{ padding: "12px 11px", color: "var(--muted)", fontSize: 12.5 }}>

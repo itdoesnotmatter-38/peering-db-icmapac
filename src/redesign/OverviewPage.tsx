@@ -1,10 +1,12 @@
 import React, { useMemo, useState } from "react";
+import { Link, useLocation } from "react-router-dom";
 import { useSnapshot } from "./Shell";
 import { Bar, Delta, Kpi, Panel } from "./bits";
 import { fmtDate, fmtMonth, loadWatchlist, saveWatchlist, watchRows } from "./data";
 
 export default function OverviewPage() {
   const { scoped, derived, scopeName } = useSnapshot();
+  const { search } = useLocation();
   const { totals, deltas, capSeries, netSeries, metros, metroCapMovers, networkMovers, latest, prev } = derived;
   const vs = fmtMonth(prev);
 
@@ -144,10 +146,10 @@ export default function OverviewPage() {
           </div>
           {rows.map((r) => (
             <div className="rd-wl-row" key={r.asn}>
-              <span className="nm">
+              <Link className="nm rd-netlink" to={{ pathname: `/net/${r.asn}`, search }}>
                 {r.name}
-                <span>AS{r.asn}</span>
-              </span>
+                <span style={{ color: "var(--faint)", fontSize: 10.5, marginLeft: 6, fontWeight: 400 }}>AS{r.asn}</span>
+              </Link>
               <span className="c rd-num">{r.found ? r.metros : "—"}</span>
               <span className="c rd-num" style={{ fontWeight: 700 }}>
                 {r.found ? `${r.capT.toFixed(1)} T` : "not listed"}

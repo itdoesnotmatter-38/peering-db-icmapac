@@ -11,6 +11,7 @@ import SharePage from "./redesign/SharePage";
 import MovementPage from "./redesign/MovementPage";
 import ChangesPage from "./redesign/ChangesPage";
 import ExchangePage from "./redesign/ExchangePage";
+import NetworkPage from "./redesign/NetworkPage";
 
 export default function App() {
   return (
@@ -24,6 +25,7 @@ export default function App() {
           <Route path="/movement" element={<MovementPage />} />
           <Route path="/changes" element={<ChangesPage />} />
           <Route path="/exchange/:ixId" element={<ExchangePage />} />
+          <Route path="/net/:asn" element={<NetworkPage />} />
         </Route>
 
         {/* Existing tools, unchanged */}
