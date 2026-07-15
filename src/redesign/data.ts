@@ -115,15 +115,6 @@ const CODE_TO_METRO: Record<string, string> = Object.fromEntries(
   Object.entries(METRO_CODES).map(([k, v]) => [v, k])
 );
 
-export const SCOPE_PRESETS: Array<{ label: string; metros: string[] | null }> = [
-  { label: "All APAC", metros: null },
-  { label: "SG + HK", metros: ["Singapore", "Hong Kong"] },
-  { label: "Japan", metros: ["Tokyo", "Osaka"] },
-  { label: "ANZ", metros: ["Sydney", "Melbourne", "Perth"] },
-  { label: "India", metros: ["Mumbai", "Chennai"] },
-  { label: "SEA", metros: ["Singapore", "Jakarta", "Kuala Lumpur", "Bangkok", "Manila"] },
-];
-
 export function scopeToParam(metros: string[] | null): string {
   if (!metros || !metros.length) return "";
   return metros.map((m) => METRO_CODES[m] || m).join(",");
@@ -140,10 +131,6 @@ export function paramToScope(param: string | null): string[] | null {
 
 export function scopeLabel(metros: string[] | null): string {
   if (!metros || !metros.length) return "All APAC";
-  const preset = SCOPE_PRESETS.find(
-    (p) => p.metros && p.metros.length === metros.length && p.metros.every((m) => metros.includes(m))
-  );
-  if (preset) return preset.label;
   if (metros.length <= 3) return metros.map((m) => METRO_CODES[m] || m).join(" + ");
   return `${metros.length} metros`;
 }
@@ -184,6 +171,11 @@ export const fmtDate = (iso: string) => {
 export const fmtMonth = (iso: string) => {
   const m = Number(iso.split("-")[1] || 1);
   return ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][m - 1];
+};
+/** "31 May" — day+month, disambiguates multiple snapshots in one month. */
+export const fmtDayMonth = (iso: string) => {
+  const parts = iso.split("-").map(Number);
+  return `${parts[2]} ${["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][(parts[1] || 1) - 1]}`;
 };
 
 /* ---------------- derived model ---------------- */
@@ -457,35 +449,8 @@ export function derive(d: TrendsResponse): Derived {
       ? `#1 operator · ${(eqxOp.presences / Math.max(nextOp.presences, 1)).toFixed(1)}× next`
       : "";
 
-  /* ---- upgrade radar (region-wide) ---- */
-  const ixCapAt = (snap: string) => {
-    const m = new Map<string, NetworkIxTrendRow>();
-    for (const r of d.networkIxTrend) {
-      if (r.snapshotDate === snap) m.set(`${r.asn}|${r.ixId}|${r.metro}`, r);
-    }
-    return m;
-  };
-  const curIx = ixCapAt(latest);
-  const prevIx = ixCapAt(prev);
-  const upgrades: UpgradeEntry[] = [];
-  curIx.forEach((r, key) => {
-    const p = prevIx.get(key);
-    const delta = mbpsToG(r.capacityMbps) - mbpsToG(p?.capacityMbps);
-    if (delta >= 100) {
-      upgrades.push({
-        asn: r.asn,
-        name: r.networkName,
-        ixId: r.ixId,
-        ixName: r.ixName,
-        metro: r.metro,
-        fromG: mbpsToG(p?.capacityMbps),
-        toG: mbpsToG(r.capacityMbps),
-        deltaG: delta,
-        isEquinix: isEquinixIx(r.ixName),
-      });
-    }
-  });
-  upgrades.sort((a, b) => b.deltaG - a.deltaG);
+  /* ---- upgrade radar (region-wide, latest transition) ---- */
+  const upgrades = upgradesFor(d, latest, prev);
 
   /* ---- computed insight cards ---- */
   const insights = buildInsights(d, {
@@ -677,6 +642,96 @@ function buildInsights(
   }
 
   return cards.slice(0, 6);
+}
+
+/* ---------------- upgrades (any transition) ---------------- */
+
+export function upgradesFor(d: TrendsResponse, to: string, from: string): UpgradeEntry[] {
+  const ixCapAt = (snap: string) => {
+    const m = new Map<string, NetworkIxTrendRow>();
+    for (const r of d.networkIxTrend) {
+      if (r.snapshotDate === snap) m.set(`${r.asn}|${r.ixId}|${r.metro}`, r);
+    }
+    return m;
+  };
+  const curIx = ixCapAt(to);
+  const prevIx = ixCapAt(from);
+  const upgrades: UpgradeEntry[] = [];
+  curIx.forEach((r, key) => {
+    const p = prevIx.get(key);
+    const delta = mbpsToG(r.capacityMbps) - mbpsToG(p?.capacityMbps);
+    if (delta >= 100) {
+      upgrades.push({
+        asn: r.asn,
+        name: r.networkName,
+        ixId: r.ixId,
+        ixName: r.ixName,
+        metro: r.metro,
+        fromG: mbpsToG(p?.capacityMbps),
+        toG: mbpsToG(r.capacityMbps),
+        deltaG: delta,
+        isEquinix: isEquinixIx(r.ixName),
+      });
+    }
+  });
+  return upgrades.sort((a, b) => b.deltaG - a.deltaG);
+}
+
+/* ---------------- movement heatmap ---------------- */
+
+export interface HeatTransition {
+  from: string;
+  to: string;
+}
+
+export interface HeatRow {
+  metro: string;
+  /** one cell per transition: capacity delta (Tbps) and network-count delta */
+  cells: Array<{ dCapT: number; dNets: number }>;
+}
+
+export interface MovementHeat {
+  transitions: HeatTransition[];
+  rows: HeatRow[];
+  maxAbsCapT: number;
+  maxAbsNets: number;
+}
+
+/** Metros × snapshot-transitions grid of net change, for the Movement heatmap. */
+export function movementHeatmap(fd: TrendsResponse): MovementHeat {
+  const snapshots = uniqSorted(fd.snapshots);
+  const transitions: HeatTransition[] = snapshots.slice(1).map((to, i) => ({ from: snapshots[i], to }));
+
+  const at = (snap: string) => {
+    const m = new Map<string, { capT: number; nets: number }>();
+    for (const r of fd.metroTrend) {
+      if (r.snapshotDate === snap) m.set(r.metro, { capT: mbpsToT(r.capacityMbps), nets: r.networkCount || 0 });
+    }
+    return m;
+  };
+  const bySnap = new Map(snapshots.map((s) => [s, at(s)]));
+
+  const latest = bySnap.get(snapshots[snapshots.length - 1])!;
+  const metros = Array.from(latest.entries())
+    .sort((a, b) => b[1].capT - a[1].capT)
+    .map(([m]) => m);
+
+  let maxAbsCapT = 0.001;
+  let maxAbsNets = 1;
+  const rows: HeatRow[] = metros.map((metro) => ({
+    metro,
+    cells: transitions.map((t) => {
+      const a = bySnap.get(t.from)?.get(metro);
+      const b = bySnap.get(t.to)?.get(metro);
+      const dCapT = (b?.capT || 0) - (a?.capT || 0);
+      const dNets = (b?.nets || 0) - (a?.nets || 0);
+      maxAbsCapT = Math.max(maxAbsCapT, Math.abs(dCapT));
+      maxAbsNets = Math.max(maxAbsNets, Math.abs(dNets));
+      return { dCapT, dNets };
+    }),
+  }));
+
+  return { transitions, rows, maxAbsCapT, maxAbsNets };
 }
 
 /* ---------------- movement (per metro) ---------------- */

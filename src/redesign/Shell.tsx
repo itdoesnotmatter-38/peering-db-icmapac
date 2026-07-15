@@ -4,7 +4,6 @@ import "./redesign.css";
 import {
   Derived,
   METRO_CODES,
-  SCOPE_PRESETS,
   TrendsResponse,
   derive,
   filterByMetros,
@@ -96,7 +95,14 @@ function ScopePicker({
   onChange: (metros: string[] | null) => void;
 }) {
   const [open, setOpen] = useState(false);
+  /* Local draft so "None → tick a few" works; the empty state is never
+     committed to the URL — views always keep at least one metro. */
+  const [draft, setDraft] = useState<string[]>(scope || allMetros);
   const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    setDraft(scope || allMetros);
+  }, [scope, allMetros]);
 
   useEffect(() => {
     if (!open) return;
@@ -114,12 +120,12 @@ function ScopePicker({
     };
   }, [open]);
 
-  const selected = scope || allMetros;
+  const commit = (next: string[]) => {
+    setDraft(next);
+    if (next.length) onChange(next.length === allMetros.length ? null : next);
+  };
   const toggleMetro = (metro: string) => {
-    const has = selected.includes(metro);
-    let next = has ? selected.filter((m) => m !== metro) : [...selected, metro];
-    if (!next.length) next = [metro]; // never allow empty
-    onChange(next.length === allMetros.length ? null : next);
+    commit(draft.includes(metro) ? draft.filter((m) => m !== metro) : [...draft, metro]);
   };
 
   return (
@@ -133,22 +139,19 @@ function ScopePicker({
       {open ? (
         <div className="rd-scope-pop">
           <div className="rd-scope-presets">
-            {SCOPE_PRESETS.map((p) => (
-              <button
-                key={p.label}
-                className={`rd-chip${scopeLabel(scope) === p.label ? " on" : ""}`}
-                onClick={() => {
-                  onChange(p.metros);
-                  setOpen(false);
-                }}
-              >
-                {p.label}
-              </button>
-            ))}
+            <button className="rd-chip" onClick={() => commit(allMetros)}>
+              Select all
+            </button>
+            <button className="rd-chip" onClick={() => setDraft([])}>
+              None
+            </button>
+            {!draft.length ? (
+              <span className="rd-scope-hint">pick at least one metro</span>
+            ) : null}
           </div>
           <div className="rd-scope-grid">
             {allMetros.map((m) => {
-              const on = selected.includes(m);
+              const on = draft.includes(m);
               return (
                 <label key={m} className={`rd-scope-item${on ? " on" : ""}`}>
                   <input type="checkbox" checked={on} onChange={() => toggleMetro(m)} />

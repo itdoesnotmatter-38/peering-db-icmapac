@@ -572,6 +572,90 @@ a.rd-pill:hover, button.rd-pill:hover { border-color: var(--accent); cursor: poi
 .rd-scope-item .nm { flex: 1; }
 .rd-scope-foot { margin-top: 10px; font-size: 11px; color: var(--faint); line-height: 1.45; }
 
+/* ---------- month slider ---------- */
+.rd-slider-bar {
+  display: flex;
+  align-items: flex-end;
+  gap: 18px;
+  flex-wrap: wrap;
+  margin-bottom: 20px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: var(--shadow);
+  padding: 14px 18px;
+}
+.rd-slider-block { display: flex; flex-direction: column; gap: 6px; min-width: 260px; }
+.rd-slider {
+  width: 100%;
+  accent-color: var(--accent);
+  cursor: pointer;
+  height: 22px;
+}
+.rd-slider-labels { display: flex; justify-content: space-between; }
+.rd-slider-tick {
+  border: none;
+  background: none;
+  font-family: var(--ui);
+  font-size: 11px;
+  color: var(--faint);
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 5px;
+  font-variant-numeric: tabular-nums;
+}
+.rd-slider-tick:hover { color: var(--text); background: var(--surface-2); }
+.rd-slider-tick.on { color: var(--accent); font-weight: 700; }
+
+/* ---------- movement heatmap ---------- */
+.rd-heatwrap {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: var(--shadow);
+  overflow-x: auto;
+  padding: 6px;
+}
+.rd-heat { border-collapse: separate; border-spacing: 3px; width: 100%; }
+.rd-heat th {
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--faint);
+  font-weight: 700;
+  padding: 6px 8px;
+  cursor: pointer;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.rd-heat th.sel { color: var(--accent); }
+.rd-heat th.mname { cursor: default; }
+.rd-heat td.mname {
+  font-size: 12.5px;
+  font-weight: 600;
+  padding: 6px 10px;
+  white-space: nowrap;
+  cursor: pointer;
+  border-radius: 7px;
+  width: 130px;
+}
+.rd-heat td.mname:hover { background: var(--surface-2); }
+.rd-heat tr.selrow td.mname { color: var(--accent); }
+.rd-heat td.cell {
+  text-align: center;
+  font-size: 11.5px;
+  font-weight: 600;
+  padding: 8px 6px;
+  border-radius: 7px;
+  cursor: pointer;
+  min-width: 64px;
+  transition: transform 0.08s;
+}
+.rd-heat td.cell:hover { transform: scale(1.06); }
+.rd-heat td.cell.selcell { outline: 2px solid var(--accent); outline-offset: -1px; }
+.rd-heat td.cell.selcol:not(.selcell) { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 35%, transparent); }
+.rd-scope-hint { font-size: 11px; color: var(--gap); align-self: center; }
+
 /* ---------- exchange profile ---------- */
 .rd-crumb {
   display: inline-flex;
