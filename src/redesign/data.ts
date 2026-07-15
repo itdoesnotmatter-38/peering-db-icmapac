@@ -1311,6 +1311,38 @@ export function networkProfile(d: TrendsResponse, asn: number): NetworkProfile {
   };
 }
 
+/* ---------------- live explore support ---------------- */
+
+export interface MetroExchange {
+  ixId: number;
+  ixName: string;
+  isEquinix: boolean;
+}
+
+/** The exchanges that belong to a metro, from the latest snapshot — used to
+    scope a live netixlan fetch without re-deriving metro membership. */
+export function metroExchanges(d: TrendsResponse, metro: string): MetroExchange[] {
+  const seen = new Map<number, MetroExchange>();
+  const latest = uniqSorted(d.snapshots).slice(-1)[0];
+  for (const r of d.ixTrend) {
+    if (r.snapshotDate === latest && r.metro === metro && !seen.has(r.ixId)) {
+      seen.set(r.ixId, { ixId: r.ixId, ixName: r.ixName || `IX ${r.ixId}`, isEquinix: isEquinixIx(r.ixName) });
+    }
+  }
+  return Array.from(seen.values());
+}
+
+/** net_id -> {name, asn} from the latest snapshot; names change rarely, so this
+    labels live netixlan rows without a second live round-trip. */
+export function snapshotNetNames(d: TrendsResponse): Map<number, { name: string; asn: number }> {
+  const m = new Map<number, { name: string; asn: number }>();
+  const latest = uniqSorted(d.snapshots).slice(-1)[0];
+  for (const r of d.networkTrend) {
+    if (r.snapshotDate === latest && !m.has(r.networkId)) m.set(r.networkId, { name: r.networkName, asn: r.asn });
+  }
+  return m;
+}
+
 /* ---------------- watchlist ---------------- */
 
 const WATCHLIST_KEY = "pdb-watchlist-asns";

@@ -84,6 +84,7 @@ function viewMeta(pathname: string): { title: string; desc: string } {
     "/movement": { title: "Movement", desc: "Entrants, departures, and upgrades since the last snapshot" },
     "/changes": { title: "Market changes", desc: "Which networks moved capacity, on which exchange — between any two snapshots" },
     "/downloads": { title: "Downloads", desc: "Snapshot files and country / region market exports" },
+    "/live": { title: "Live explore", desc: "Today's PeeringDB ports for one metro, fetched on demand" },
   };
   return map[pathname] || map["/"];
 }
@@ -353,14 +354,14 @@ export default function Shell() {
           <div className="rd-eyebrow rd-nav-label" style={{ marginTop: 14 }}>
             Tools
           </div>
+          <NavLink to={navTo("/live")} className={({ isActive }) => `rd-nav-item${isActive ? " active" : ""}`}>
+            {icons.live}
+            <span>Live explore</span>
+          </NavLink>
           <NavLink to={navTo("/downloads")} className={({ isActive }) => `rd-nav-item${isActive ? " active" : ""}`}>
             {icons.downloads}
             <span>Downloads</span>
           </NavLink>
-          <Link to="/live" className="rd-nav-item">
-            {icons.live}
-            <span>Live explore</span>
-          </Link>
         </nav>
 
         <div className="rd-rail-foot">
