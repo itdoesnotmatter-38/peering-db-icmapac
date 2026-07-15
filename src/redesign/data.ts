@@ -1009,6 +1009,31 @@ export interface FacilityRank {
   isEquinix: boolean;
 }
 
+export interface FacilityMetaEntry {
+  name: string;
+  org: string;
+  metro: string;
+  isEquinix: boolean;
+}
+
+/** facId -> facility metadata (name, operator, metro) from the latest snapshot,
+    for enriching live netfac rows on the network profile. UNFILTERED. */
+export function facilityMeta(d: TrendsResponse): Map<number, FacilityMetaEntry> {
+  const latest = uniqSorted(d.snapshots).slice(-1)[0];
+  const m = new Map<number, FacilityMetaEntry>();
+  for (const r of d.facilityTrend) {
+    if (r.snapshotDate === latest && !m.has(r.facilityId)) {
+      m.set(r.facilityId, {
+        name: r.facilityName,
+        org: r.facilityOrgName || "—",
+        metro: r.metro,
+        isEquinix: isEquinixFacilityOrg(r.facilityOrgName),
+      });
+    }
+  }
+  return m;
+}
+
 /** Facilities (data centres) in the scope-filtered dataset, by network presence. */
 export function facilitiesRanking(fd: TrendsResponse, latest: string): FacilityRank[] {
   return fd.facilityTrend
@@ -1230,6 +1255,7 @@ export interface NetworkPort {
 
 export interface NetworkProfile {
   asn: number;
+  netId: number;
   name: string;
   type: string;
   found: boolean;
@@ -1255,8 +1281,10 @@ export function networkProfile(d: TrendsResponse, asn: number): NetworkProfile {
   const prev = snapshots.length > 1 ? snapshots[snapshots.length - 2] : latest;
 
   const nRows = d.networkTrend.filter((r) => r.asn === asn);
-  const name = nRows.find((r) => r.snapshotDate === latest)?.networkName || nRows[nRows.length - 1]?.networkName || `AS${asn}`;
-  const type = nRows.find((r) => r.snapshotDate === latest)?.networkType || nRows[nRows.length - 1]?.networkType || "—";
+  const latestRow = nRows.find((r) => r.snapshotDate === latest);
+  const name = latestRow?.networkName || nRows[nRows.length - 1]?.networkName || `AS${asn}`;
+  const type = latestRow?.networkType || nRows[nRows.length - 1]?.networkType || "—";
+  const netId = latestRow?.networkId ?? nRows[nRows.length - 1]?.networkId ?? 0;
 
   const capSeries = snapshots.map((s) =>
     nRows.filter((r) => r.snapshotDate === s).reduce((a, r) => a + mbpsToT(r.capacityMbps), 0)
@@ -1320,6 +1348,7 @@ export function networkProfile(d: TrendsResponse, asn: number): NetworkProfile {
 
   return {
     asn,
+    netId,
     name,
     type,
     found: footprint.length > 0 || ports.length > 0,
