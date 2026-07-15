@@ -39,9 +39,10 @@ export default function MovementPage() {
   const heatColor = (v: number) => {
     const max = metric === "cap" ? heat.maxAbsCapT : heat.maxAbsNets;
     if (Math.abs(v) < (metric === "cap" ? 0.005 : 0.5)) return "var(--surface-2)";
-    const pct = Math.min(1, Math.abs(v) / max);
+    // sqrt easing so small-but-real changes stay distinguishable from big ones
+    const pct = Math.sqrt(Math.min(1, Math.abs(v) / max));
     const hue = v > 0 ? "var(--present)" : "var(--gap)";
-    return `color-mix(in srgb, ${hue} ${Math.round(10 + pct * 55)}%, var(--surface))`;
+    return `color-mix(in srgb, ${hue} ${Math.round(8 + pct * 58)}%, var(--surface))`;
   };
   const cellText = (c: { dCapT: number; dNets: number }) => {
     if (metric === "cap") return Math.abs(c.dCapT) < 0.05 ? "·" : `${c.dCapT > 0 ? "+" : "−"}${Math.abs(c.dCapT).toFixed(1)}`;

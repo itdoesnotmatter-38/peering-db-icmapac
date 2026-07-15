@@ -1,8 +1,8 @@
 import React, { useMemo, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { useSnapshot } from "./Shell";
-import { Bar, Delta, Kpi, Panel } from "./bits";
-import { fmtDate, fmtMonth, loadWatchlist, saveWatchlist, watchRows } from "./data";
+import { Bar, Delta, Kpi, NetworkTypeahead, Panel } from "./bits";
+import { fmtDate, fmtMonth, loadWatchlist, networksDirectory, saveWatchlist, watchRows } from "./data";
 
 export default function OverviewPage() {
   const { scoped, derived, scopeName } = useSnapshot();
@@ -12,15 +12,13 @@ export default function OverviewPage() {
 
   /* ---- watchlist ---- */
   const [watch, setWatch] = useState<number[]>(() => loadWatchlist());
-  const [draft, setDraft] = useState("");
   const rows = useMemo(() => watchRows(scoped, latest, prev, watch), [scoped, latest, prev, watch]);
-  const addWatch = () => {
-    const asn = Number(draft.replace(/^as/i, "").trim());
+  const dir = useMemo(() => networksDirectory(scoped, latest), [scoped, latest]);
+  const addWatch = (asn: number) => {
     if (!Number.isFinite(asn) || asn <= 0 || watch.includes(asn)) return;
     const next = [...watch, asn];
     setWatch(next);
     saveWatchlist(next);
-    setDraft("");
   };
   const removeWatch = (asn: number) => {
     const next = watch.filter((a) => a !== asn);
@@ -125,17 +123,8 @@ export default function OverviewPage() {
       <div className="rd-section">
         <div className="rd-sec-head">
           <h2>Watchlist</h2>
-          <div className="rd-watch-add">
-            <input
-              value={draft}
-              onChange={(e) => setDraft(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && addWatch()}
-              placeholder="Add ASN, e.g. 15169"
-              aria-label="Add ASN to watchlist"
-            />
-            <button className="rd-btn" onClick={addWatch}>
-              Pin
-            </button>
+          <div className="rd-watch-add" style={{ minWidth: 280 }}>
+            <NetworkTypeahead options={dir} onPick={addWatch} exclude={new Set(watch)} placeholder="Pin a network — name or ASN…" />
           </div>
         </div>
         <Panel title={`Pinned networks — ${scopeName} footprint`} tag={fmtMonth(latest)}>
