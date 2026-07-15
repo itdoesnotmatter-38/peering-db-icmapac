@@ -83,6 +83,7 @@ function viewMeta(pathname: string): { title: string; desc: string } {
     "/share": { title: "Market share", desc: "Equinix share of PeeringDB-visible interconnection" },
     "/movement": { title: "Movement", desc: "Entrants, departures, and upgrades since the last snapshot" },
     "/changes": { title: "Market changes", desc: "Which networks moved capacity, on which exchange — between any two snapshots" },
+    "/downloads": { title: "Downloads", desc: "Snapshot files and country / region market exports" },
   };
   return map[pathname] || map["/"];
 }
@@ -352,17 +353,13 @@ export default function Shell() {
           <div className="rd-eyebrow rd-nav-label" style={{ marginTop: 14 }}>
             Tools
           </div>
+          <NavLink to={navTo("/downloads")} className={({ isActive }) => `rd-nav-item${isActive ? " active" : ""}`}>
+            {icons.downloads}
+            <span>Downloads</span>
+          </NavLink>
           <Link to="/live" className="rd-nav-item">
             {icons.live}
             <span>Live explore</span>
-          </Link>
-          <Link to="/trends" className="rd-nav-item">
-            {icons.movement}
-            <span>Trends</span>
-          </Link>
-          <Link to="/downloads" className="rd-nav-item">
-            {icons.downloads}
-            <span>Downloads</span>
           </Link>
         </nav>
 

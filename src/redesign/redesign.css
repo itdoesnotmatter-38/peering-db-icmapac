@@ -773,6 +773,25 @@ a.rd-pill:hover, button.rd-pill:hover { border-color: var(--accent); cursor: poi
 .rd-rowlink { text-decoration: none; color: inherit; display: block; }
 .rd-rowlink:hover { color: inherit; }
 
+/* ---------- downloads ---------- */
+.rd-dlgrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+.rd-dlmeta { padding: 10px 14px 4px; font-size: 12px; color: var(--muted); }
+.rd-dllinks { display: flex; flex-wrap: wrap; gap: 8px; padding: 4px 14px 14px; }
+.rd-dl {
+  font-size: 12px;
+  color: var(--accent);
+  text-decoration: none;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  padding: 4px 9px;
+  background: var(--surface-2);
+}
+.rd-dl:hover { border-color: var(--accent); }
+.rd-dl.disabled { color: var(--faint); pointer-events: none; opacity: 0.6; }
+@media (max-width: 1080px) {
+  .rd-dlgrid { grid-template-columns: 1fr; }
+}
+
 /* ---------- responsive ---------- */
 @media (max-width: 1080px) {
   .rd-app { grid-template-columns: 64px 1fr; }

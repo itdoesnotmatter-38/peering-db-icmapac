@@ -2,7 +2,7 @@ import React, { useMemo } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { useSnapshot } from "./Shell";
 import { Bar, Kpi, Panel } from "./bits";
-import { exchangesRanking, fmtMonth } from "./data";
+import { exchangesRanking, facilitiesRanking, fmtMonth } from "./data";
 
 export default function SharePage() {
   const { scoped, derived, scopeName } = useSnapshot();
@@ -10,6 +10,7 @@ export default function SharePage() {
   const since = fmtMonth(snapshots[0]);
   const { search } = useLocation();
   const exchanges = useMemo(() => exchangesRanking(scoped, latest), [scoped, latest]);
+  const facilities = useMemo(() => facilitiesRanking(scoped, latest), [scoped, latest]);
 
   const apacDelta = share.apacSeries[share.apacSeries.length - 1] - share.apacSeries[0];
   const ppNode = (v: number) => (
@@ -113,6 +114,30 @@ export default function SharePage() {
                 </span>
               </div>
             </Link>
+          ))}
+        </Panel>
+      </div>
+
+      <div className="rd-section" style={{ marginTop: 24 }}>
+        <div className="rd-sec-head">
+          <h2>Facilities in scope</h2>
+          <span className="note">Data centres ranked by number of network presences (Equinix tinted)</span>
+        </div>
+        <Panel title={`${facilities.length} facilities, by network presence`} tag={scopeName}>
+          {facilities.slice(0, 12).map((f) => (
+            <div className={`rd-shrow${f.isEquinix ? " eqxrow" : ""}`} key={f.facilityId} style={{ gridTemplateColumns: "230px 1fr 44px 130px" }}>
+              <span className="nm" style={f.isEquinix ? { color: "var(--equinix)" } : undefined} title={`${f.name} · ${f.org}`}>
+                {f.name.length > 30 ? `${f.name.slice(0, 29)}…` : f.name}
+                <span className="rd-cc" style={{ marginLeft: 7 }}>
+                  {f.metro}
+                </span>
+              </span>
+              <Bar pct={(f.networkCount / (facilities[0]?.networkCount || 1)) * 100} color={f.isEquinix ? "var(--equinix)" : "var(--border-strong)"} />
+              <span className="pv rd-num">{f.networkCount}</span>
+              <span className="fr rd-num" title={f.org}>
+                {f.org.length > 18 ? `${f.org.slice(0, 17)}…` : f.org}
+              </span>
+            </div>
           ))}
         </Panel>
       </div>

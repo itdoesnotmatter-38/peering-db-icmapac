@@ -12,6 +12,7 @@ import MovementPage from "./redesign/MovementPage";
 import ChangesPage from "./redesign/ChangesPage";
 import ExchangePage from "./redesign/ExchangePage";
 import NetworkPage from "./redesign/NetworkPage";
+import RedesignDownloads from "./redesign/DownloadsPage";
 
 export default function App() {
   return (
@@ -26,11 +27,13 @@ export default function App() {
           <Route path="/changes" element={<ChangesPage />} />
           <Route path="/exchange/:ixId" element={<ExchangePage />} />
           <Route path="/net/:asn" element={<NetworkPage />} />
+          <Route path="/downloads" element={<RedesignDownloads />} />
         </Route>
 
-        {/* Existing tools, unchanged */}
+        {/* Existing tools */}
         <Route path="/live" element={<PeeringDBDashboard />} />
-        <Route path="/downloads" element={<DownloadsPage />} />
+        {/* Legacy full-page views kept for bookmarks; retired from nav */}
+        <Route path="/downloads-classic" element={<DownloadsPage />} />
         <Route path="/trends" element={<TrendsPage />} />
         <Route path="/asn/:asn" element={<DetailView />} />
         <Route path="/ix/:ix_id" element={<DetailView />} />

@@ -1000,6 +1000,30 @@ export function exchangesRanking(fd: TrendsResponse, latest: string): ExchangeRa
     .sort((a, b) => b.capT - a.capT);
 }
 
+export interface FacilityRank {
+  facilityId: number;
+  name: string;
+  org: string;
+  metro: string;
+  networkCount: number;
+  isEquinix: boolean;
+}
+
+/** Facilities (data centres) in the scope-filtered dataset, by network presence. */
+export function facilitiesRanking(fd: TrendsResponse, latest: string): FacilityRank[] {
+  return fd.facilityTrend
+    .filter((r) => r.snapshotDate === latest)
+    .map((r) => ({
+      facilityId: r.facilityId,
+      name: r.facilityName,
+      org: r.facilityOrgName || "—",
+      metro: r.metro,
+      networkCount: r.networkCount || 0,
+      isEquinix: isEquinixFacilityOrg(r.facilityOrgName),
+    }))
+    .sort((a, b) => b.networkCount - a.networkCount);
+}
+
 export interface ExchangeMember {
   asn: number;
   name: string;
