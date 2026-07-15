@@ -151,7 +151,7 @@ export default function NetworkPage() {
         </span>
         <div className="rd-grow" />
         <Link className="rd-btn" to={compareTo}>
-          ⇄ Compare
+          ⇄ Analyse
         </Link>
         <button className={`rd-btn${watched ? " on" : ""}`} onClick={toggleWatch}>
           {watched ? "★ On watchlist" : "☆ Add to watchlist"}

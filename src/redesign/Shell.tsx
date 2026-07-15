@@ -96,7 +96,7 @@ function viewMeta(pathname: string): { title: string; desc: string } {
     "/share": { title: "Market share", desc: "Equinix share of PeeringDB-visible interconnection" },
     "/movement": { title: "Movement", desc: "Entrants, departures, and upgrades since the last snapshot" },
     "/changes": { title: "Market changes", desc: "Which networks moved capacity, on which exchange — between any two snapshots" },
-    "/compare": { title: "Compare networks", desc: "Side-by-side IX allocation across metros — add networks by name or ASN" },
+    "/compare": { title: "Analysis", desc: "Multi-network workbench — any networks × metros or exchanges, with facilities and trends" },
     "/downloads": { title: "Downloads", desc: "Snapshot files and country / region market exports" },
     "/live": { title: "Live explore", desc: "Today's PeeringDB ports for one metro, fetched on demand" },
   };
@@ -414,7 +414,7 @@ export default function Shell() {
               <rect x="10" y="6" width="4" height="15" rx="1" />
               <rect x="17" y="3" width="4" height="18" rx="1" />
             </svg>
-            <span>Compare</span>
+            <span>Analysis</span>
           </NavLink>
           <div className="rd-eyebrow rd-nav-label" style={{ marginTop: 14 }}>
             Directory

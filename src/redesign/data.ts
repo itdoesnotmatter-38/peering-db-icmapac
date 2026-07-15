@@ -1507,6 +1507,33 @@ export function snapshotNetNames(d: TrendsResponse): Map<number, { name: string;
   return m;
 }
 
+/* ---------------- analysis workbench helpers ---------------- */
+
+/** One network's capacity (Tbps) per snapshot, within the given (scope-filtered)
+    dataset — for the multi-network trend chart. */
+export function networkScopeSeries(fd: TrendsResponse, asn: number, asOf?: string): number[] {
+  const snapshots = snapshotsUpTo(fd.snapshots, asOf);
+  return snapshots.map((s) =>
+    fd.networkTrend.filter((r) => r.snapshotDate === s && r.asn === asn).reduce((a, r) => a + (r.capacityMbps || 0) / 1e6, 0)
+  );
+}
+
+/** Top networks by combined port capacity across a set of exchanges — the
+    default rows for the exchange pivot when no networks are selected. */
+export function topNetworksOnIxs(d: TrendsResponse, ixIds: number[], asOf?: string, limit = 10): number[] {
+  const latest = snapshotsUpTo(d.snapshots, asOf).slice(-1)[0];
+  const set = new Set(ixIds);
+  const agg = new Map<number, number>();
+  for (const r of d.networkIxTrend) {
+    if (r.snapshotDate !== latest || !set.has(r.ixId)) continue;
+    agg.set(r.asn, (agg.get(r.asn) || 0) + (r.capacityMbps || 0));
+  }
+  return Array.from(agg.entries())
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, limit)
+    .map(([asn]) => asn);
+}
+
 /* ---------------- watchlist ---------------- */
 
 const WATCHLIST_KEY = "pdb-watchlist-asns";

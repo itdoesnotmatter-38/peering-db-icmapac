@@ -1020,6 +1020,48 @@ a.rd-legrow:hover { background: var(--surface-2); }
 .rd-cmini i { display: block; min-width: 2px; }
 .rd-cmini-wrap .tot { font-size: 11px; font-weight: 700; color: var(--muted); white-space: nowrap; }
 
+/* ---------- analysis matrix ---------- */
+.rd-amx { border-collapse: separate; border-spacing: 3px; width: 100%; }
+.rd-amx thead th {
+  font-size: 10px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--faint);
+  font-weight: 700;
+  padding: 7px 6px;
+  text-align: center;
+  vertical-align: bottom;
+  min-width: 78px;
+}
+.rd-amx thead th a { color: var(--muted); text-decoration: none; display: block; }
+.rd-amx thead th a:hover { color: var(--accent); }
+.rd-amx thead th.eqx { background: var(--equinix-bg); border-bottom: 2px solid var(--equinix); border-radius: 6px 6px 0 0; }
+.rd-amx thead th.eqx a { color: var(--equinix); }
+.rd-amx thead th .mx { display: block; font-size: 8.5px; color: var(--faint); margin-top: 2px; font-weight: 500; text-transform: none; letter-spacing: 0; }
+.rd-amx thead th.fac { color: var(--muted); text-transform: none; letter-spacing: 0; font-size: 9.5px; }
+.rd-amx th.who, .rd-amx td.who { text-align: left; min-width: 180px; }
+.rd-amx td.who { padding: 8px 10px; white-space: nowrap; }
+.rd-amx td.who .sub { color: var(--faint); font-size: 10.5px; margin-left: 7px; }
+.rd-amx td.cell {
+  text-align: center;
+  font-size: 11.5px;
+  font-weight: 600;
+  padding: 7px 5px;
+  border-radius: 7px;
+  min-width: 70px;
+}
+.rd-amx td.cell .d { display: block; font-size: 9px; font-weight: 700; margin-top: 1px; }
+.rd-amx td.cell.eqxcol { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--equinix) 25%, transparent); }
+.rd-amx tr.totals td { border-top: 2px solid var(--border-strong); }
+.rd-amx tr.totals td.who { font-weight: 700; color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; }
+.rd-amx th.gap, .rd-amx td.gap { min-width: 14px; width: 14px; padding: 0; }
+.rd-amx td.cell.dot { font-size: 13px; color: var(--faint); }
+.rd-amx td.cell.dot .p { color: var(--accent); }
+.rd-amx td.cell.dot .p.eqx { color: var(--equinix); }
+.rd-amx.compact thead th { min-width: 64px; }
+.rd-amx.compact td.cell { min-width: 58px; padding: 6px 4px; font-size: 11px; }
+.rd-trend svg { display: block; }
+
 /* ---------- exchange profile ---------- */
 .rd-crumb {
   display: inline-flex;

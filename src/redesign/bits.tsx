@@ -124,36 +124,48 @@ export function Panel({ title, tag, children }: { title: string; tag?: string; c
   );
 }
 
-/* Type-ahead for picking networks by name or ASN. Multi-term friendly:
-   "akamai fastly 13335" OR-matches the suggestions, and Enter adds the
-   best match for EVERY term at once (via onPickMany when provided).
-   A raw number with no match falls through as an ASN. */
-export function NetworkTypeahead({
+export interface TypeaheadOption {
+  id: number;
+  name: string;
+  sub?: string;
+  meta?: string;
+  /** extra text tokens can match against (e.g. metro name for an IX) */
+  extra?: string;
+}
+
+/* Generic multi-term type-ahead. "akamai fastly 13335" OR-matches the
+   suggestions, and Enter adds the best match for EVERY term at once
+   (via onPickMany when provided). numericFallback lets a raw number
+   with no match fall through as an id (used for ASNs). */
+export function EntityTypeahead({
   options,
   onPick,
   onPickMany,
   placeholder,
   exclude,
+  numericFallback,
 }: {
-  options: Array<{ asn: number; name: string; type: string; capT: number }>;
-  onPick: (asn: number) => void;
-  onPickMany?: (asns: number[]) => void;
+  options: TypeaheadOption[];
+  onPick: (id: number) => void;
+  onPickMany?: (ids: number[]) => void;
   placeholder?: string;
   exclude?: Set<number>;
+  numericFallback?: boolean;
 }) {
   const [q, setQ] = useState("");
   const [open, setOpen] = useState(false);
+  const hay = useCallback((o: TypeaheadOption) => `${o.name} ${o.extra || ""}`, []);
   const matches = React.useMemo(() => {
     const s = q.trim();
     if (!s) return [];
     return options
-      .filter((o) => !exclude?.has(o.asn))
-      .filter((o) => tokenMatch(s, o.name, o.asn))
+      .filter((o) => !exclude?.has(o.id))
+      .filter((o) => tokenMatch(s, hay(o), o.id))
       .slice(0, 8);
-  }, [q, options, exclude]);
+  }, [q, options, exclude, hay]);
 
-  const pick = (asn: number) => {
-    onPick(asn);
+  const pick = (id: number) => {
+    onPick(id);
     setQ("");
     setOpen(false);
   };
@@ -163,8 +175,8 @@ export function NetworkTypeahead({
     const tokens = q.toLowerCase().split(/[\s,]+/).filter(Boolean);
     if (!tokens.length) return;
     if (tokens.length === 1) {
-      if (matches.length) pick(matches[0].asn);
-      else {
+      if (matches.length) pick(matches[0].id);
+      else if (numericFallback) {
         const n = Number(tokens[0].replace(/^as/, ""));
         if (Number.isFinite(n) && n > 0) pick(n);
       }
@@ -172,9 +184,9 @@ export function NetworkTypeahead({
     }
     const picks: number[] = [];
     for (const t of tokens) {
-      const m = options.find((o) => !exclude?.has(o.asn) && !picks.includes(o.asn) && tokenMatch(t, o.name, o.asn));
-      if (m) picks.push(m.asn);
-      else {
+      const m = options.find((o) => !exclude?.has(o.id) && !picks.includes(o.id) && tokenMatch(t, hay(o), o.id));
+      if (m) picks.push(m.id);
+      else if (numericFallback) {
         const n = Number(t.replace(/^as/, ""));
         if (Number.isFinite(n) && n > 0 && !picks.includes(n)) picks.push(n);
       }
@@ -211,15 +223,45 @@ export function NetworkTypeahead({
       {open && matches.length ? (
         <div className="rd-ta-pop">
           {matches.map((m) => (
-            <div key={m.asn} className="rd-ta-row" onMouseDown={() => pick(m.asn)}>
+            <div key={m.id} className="rd-ta-row" onMouseDown={() => pick(m.id)}>
               <span className="nm">{m.name}</span>
-              <span className="as rd-num">AS{m.asn}</span>
-              <span className="cap rd-num">{m.capT.toFixed(1)}T</span>
+              {m.sub ? <span className="as rd-num">{m.sub}</span> : null}
+              {m.meta ? <span className="cap rd-num">{m.meta}</span> : null}
             </div>
           ))}
         </div>
       ) : null}
     </div>
+  );
+}
+
+/* Back-compat wrapper: type-ahead over the networks directory. */
+export function NetworkTypeahead({
+  options,
+  onPick,
+  onPickMany,
+  placeholder,
+  exclude,
+}: {
+  options: Array<{ asn: number; name: string; type: string; capT: number }>;
+  onPick: (asn: number) => void;
+  onPickMany?: (asns: number[]) => void;
+  placeholder?: string;
+  exclude?: Set<number>;
+}) {
+  const mapped = React.useMemo(
+    () => options.map((o) => ({ id: o.asn, name: o.name, sub: `AS${o.asn}`, meta: `${o.capT.toFixed(1)}T` })),
+    [options]
+  );
+  return (
+    <EntityTypeahead
+      options={mapped}
+      onPick={onPick}
+      onPickMany={onPickMany}
+      placeholder={placeholder || "Add network by name or ASN…"}
+      exclude={exclude}
+      numericFallback
+    />
   );
 }
 
