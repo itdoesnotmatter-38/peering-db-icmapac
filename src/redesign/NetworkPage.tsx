@@ -37,15 +37,14 @@ export default function NetworkPage() {
   const [watched, setWatched] = useState<boolean>(() => loadWatchlist().includes(Number(asn)));
 
   // default the selected metro to one in the global scope, so opening a
-  // network while scoped to (say) KUL lands on KUL rather than its biggest metro
-  const defaultMetro = (fp: typeof p.footprint) => {
-    if (scope && scope.length) {
-      const inScope = fp.find((f) => scope.includes(f.metro));
-      if (inScope) return inScope.metro;
-    }
-    return fp[0]?.metro || "";
-  };
-  const [metro, setMetro] = useState<string>(() => defaultMetro(p.footprint));
+  // The footprint honours the global scope, like every other page — pick a few
+  // metros up top and the list here narrows to them. If the network has no
+  // presence in the scoped metros, fall back to its full footprint with a note.
+  const inScopeFootprint = scope && scope.length ? p.footprint.filter((f) => scope.includes(f.metro)) : p.footprint;
+  const scopeMismatch = Boolean(scope && scope.length && inScopeFootprint.length === 0);
+  const visibleFootprint = inScopeFootprint.length ? inScopeFootprint : p.footprint;
+
+  const [metro, setMetro] = useState<string>(() => visibleFootprint[0]?.metro || "");
 
   // live facility membership (netfac) for this network
   const [facs, setFacs] = useState<{ loading: boolean; rows: FacRow[]; error: string | null }>({
@@ -55,7 +54,7 @@ export default function NetworkPage() {
   });
 
   useEffect(() => {
-    setMetro(defaultMetro(p.footprint));
+    setMetro(visibleFootprint[0]?.metro || "");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [p, scope]);
 
@@ -121,7 +120,7 @@ export default function NetworkPage() {
 
   const latest = p.snapshots[p.snapshots.length - 1];
   const prev = p.snapshots.length > 1 ? p.snapshots[p.snapshots.length - 2] : latest;
-  const maxMetro = p.footprint[0]?.capT || 1;
+  const maxMetro = visibleFootprint[0]?.capT || 1;
 
   return (
     <>
@@ -152,8 +151,16 @@ export default function NetworkPage() {
 
       <div className="rd-section">
         <div className="rd-split">
-          <Panel title="Footprint by metro" tag="click to drill in">
-            {p.footprint.map((f) => (
+          <Panel
+            title="Footprint by metro"
+            tag={scope && scope.length && !scopeMismatch ? `${visibleFootprint.length} of ${p.footprint.length} · scope` : "click to drill in"}
+          >
+            {scopeMismatch ? (
+              <div style={{ padding: "8px 11px", color: "var(--muted)", fontSize: 12, lineHeight: 1.5 }}>
+                {p.name} has no presence in your selected metros — showing its full APAC footprint.
+              </div>
+            ) : null}
+            {visibleFootprint.map((f) => (
               <button
                 type="button"
                 key={f.metro}
