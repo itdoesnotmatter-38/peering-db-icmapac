@@ -79,6 +79,7 @@ function viewMeta(pathname: string): { title: string; desc: string } {
     "/insights": { title: "Insights", desc: "What moved, what's missing — computed from the last two snapshots" },
     "/share": { title: "Market share", desc: "Equinix share of PeeringDB-visible interconnection" },
     "/movement": { title: "Movement", desc: "Entrants, departures, and upgrades since the last snapshot" },
+    "/changes": { title: "Market changes", desc: "Which networks moved capacity, on which exchange — between any two snapshots" },
   };
   return map[pathname] || map["/"];
 }
@@ -197,6 +198,14 @@ const icons = {
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
       <path d="M4 18 9 12l4 3 7-8" />
       <path d="M15 7h5v5" />
+    </svg>
+  ),
+  changes: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+      <rect x="3" y="3" width="7" height="7" rx="1.5" />
+      <rect x="14" y="3" width="7" height="7" rx="1.5" />
+      <rect x="3" y="14" width="7" height="7" rx="1.5" />
+      <rect x="14" y="14" width="7" height="7" rx="1.5" />
     </svg>
   ),
   live: (
@@ -332,6 +341,10 @@ export default function Shell() {
           <NavLink to={navTo("/movement")} className={({ isActive }) => `rd-nav-item${isActive ? " active" : ""}`}>
             {icons.movement}
             <span>Movement</span>
+          </NavLink>
+          <NavLink to={navTo("/changes")} className={({ isActive }) => `rd-nav-item${isActive ? " active" : ""}`}>
+            {icons.changes}
+            <span>Market changes</span>
           </NavLink>
           <div className="rd-eyebrow rd-nav-label" style={{ marginTop: 14 }}>
             Tools

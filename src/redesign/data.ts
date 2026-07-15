@@ -734,6 +734,165 @@ export function movementHeatmap(fd: TrendsResponse): MovementHeat {
   return { transitions, rows, maxAbsCapT, maxAbsNets };
 }
 
+/* ---------------- market changes (network × IX shift) ---------------- */
+
+export type ShiftStatus = "up" | "down" | "added" | "removed" | "migration";
+
+export interface ShiftCell {
+  ixId: number;
+  ixName: string;
+  metro: string;
+  isEquinix: boolean;
+  changeG: number;
+}
+
+export interface ShiftNetwork {
+  key: string;
+  networkId: number;
+  asn: number;
+  name: string;
+  metro: string;
+  status: ShiftStatus;
+  totalChangeG: number;
+  cells: ShiftCell[];
+}
+
+export interface ShiftColumn {
+  ixId: number;
+  ixName: string;
+  metro: string;
+  isEquinix: boolean;
+  activityG: number;
+}
+
+export interface MarketChanges {
+  networks: ShiftNetwork[];
+  summary: {
+    upgradedG: number;
+    reducedG: number;
+    netG: number;
+    added: number;
+    removed: number;
+    migrations: number;
+  };
+}
+
+/** Per-network, per-IX capacity change between two snapshots (scope-filtered).
+    Everything is derived from netixlan ports so cells and row totals agree. */
+export function marketChanges(fd: TrendsResponse, from: string, to: string): MarketChanges {
+  // key by (networkId, metro): an IX belongs to a metro, so a network in two
+  // metros is two rows — matching how the exchange dimension actually works.
+  type Bucket = { asn: number; name: string; metro: string; cells: Map<number, ShiftCell> };
+  const buckets = new Map<string, Bucket>();
+
+  const touch = (r: NetworkIxTrendRow) => {
+    const key = `${r.networkId}|${r.metro}`;
+    let b = buckets.get(key);
+    if (!b) {
+      b = { asn: r.asn, name: r.networkName, metro: r.metro, cells: new Map() };
+      buckets.set(key, b);
+    }
+    let c = b.cells.get(r.ixId);
+    if (!c) {
+      c = { ixId: r.ixId, ixName: r.ixName || `IX ${r.ixId}`, metro: r.metro, isEquinix: isEquinixIx(r.ixName), changeG: 0 };
+      b.cells.set(r.ixId, c);
+    }
+    return c;
+  };
+
+  for (const r of fd.networkIxTrend) {
+    if (r.snapshotDate === from) touch(r).changeG -= (r.capacityMbps || 0) / 1000;
+    else if (r.snapshotDate === to) touch(r).changeG += (r.capacityMbps || 0) / 1000;
+  }
+
+  let upgradedG = 0;
+  let reducedG = 0;
+  let added = 0;
+  let removed = 0;
+  let migrations = 0;
+
+  const networks: ShiftNetwork[] = [];
+  buckets.forEach((b, key) => {
+    const cells = Array.from(b.cells.values()).filter((c) => Math.abs(c.changeG) >= 1);
+    if (!cells.length) return;
+    const totalChangeG = cells.reduce((a, c) => a + c.changeG, 0);
+    const gained = cells.some((c) => c.changeG > 0);
+    const lost = cells.some((c) => c.changeG < 0);
+
+    // capacity moved between exchanges but net ~flat = a migration
+    let status: ShiftStatus;
+    if (Math.abs(totalChangeG) < 1 && gained && lost) status = "migration";
+    else if (totalChangeG > 0) status = "up";
+    else status = "down";
+
+    cells.forEach((c) => {
+      if (c.changeG > 0) upgradedG += c.changeG;
+      else reducedG += -c.changeG;
+    });
+    if (status === "migration") migrations += 1;
+
+    networks.push({
+      key,
+      networkId: Number(key.split("|")[0]),
+      asn: b.asn,
+      name: b.name,
+      metro: b.metro,
+      status,
+      totalChangeG,
+      cells: cells.sort((a, c) => Math.abs(c.changeG) - Math.abs(a.changeG)),
+    });
+  });
+
+  // decide added/removed by whole-network presence across the two snapshots
+  const presence = presenceByNetworkMetro(fd, from, to);
+  for (const n of networks) {
+    const p = presence.get(n.key);
+    if (p) {
+      if (!p.from && p.to) {
+        n.status = "added";
+        added += 1;
+      } else if (p.from && !p.to) {
+        n.status = "removed";
+        removed += 1;
+      }
+    }
+  }
+
+  networks.sort((a, b) => Math.abs(b.totalChangeG) - Math.abs(a.totalChangeG));
+  return { networks, summary: { upgradedG, reducedG, netG: upgradedG - reducedG, added, removed, migrations } };
+}
+
+function presenceByNetworkMetro(fd: TrendsResponse, from: string, to: string) {
+  const m = new Map<string, { from: boolean; to: boolean }>();
+  for (const r of fd.networkTrend) {
+    if (r.snapshotDate !== from && r.snapshotDate !== to) continue;
+    const key = `${r.networkId}|${r.metro}`;
+    const e = m.get(key) || { from: false, to: false };
+    if (r.snapshotDate === from) e.from = true;
+    if (r.snapshotDate === to) e.to = true;
+    m.set(key, e);
+  }
+  return m;
+}
+
+/** Pick the IX columns to show: Equinix pinned first, then by total activity. */
+export function shiftColumns(networks: ShiftNetwork[], limit = 10): ShiftColumn[] {
+  const agg = new Map<number, ShiftColumn>();
+  for (const n of networks) {
+    for (const c of n.cells) {
+      const e = agg.get(c.ixId) || { ixId: c.ixId, ixName: c.ixName, metro: c.metro, isEquinix: c.isEquinix, activityG: 0 };
+      e.activityG += Math.abs(c.changeG);
+      agg.set(c.ixId, e);
+    }
+  }
+  return Array.from(agg.values())
+    .sort((a, b) => {
+      if (a.isEquinix !== b.isEquinix) return a.isEquinix ? -1 : 1;
+      return b.activityG - a.activityG;
+    })
+    .slice(0, limit);
+}
+
 /* ---------------- movement (per metro) ---------------- */
 
 export function movementFor(

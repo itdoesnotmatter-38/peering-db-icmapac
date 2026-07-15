@@ -9,6 +9,7 @@ import OverviewPage from "./redesign/OverviewPage";
 import InsightsPage from "./redesign/InsightsPage";
 import SharePage from "./redesign/SharePage";
 import MovementPage from "./redesign/MovementPage";
+import ChangesPage from "./redesign/ChangesPage";
 import ExchangePage from "./redesign/ExchangePage";
 
 export default function App() {
@@ -21,6 +22,7 @@ export default function App() {
           <Route path="/insights" element={<InsightsPage />} />
           <Route path="/share" element={<SharePage />} />
           <Route path="/movement" element={<MovementPage />} />
+          <Route path="/changes" element={<ChangesPage />} />
           <Route path="/exchange/:ixId" element={<ExchangePage />} />
         </Route>
 
