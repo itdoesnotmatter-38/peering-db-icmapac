@@ -1235,6 +1235,94 @@ export function exchangeProfile(d: TrendsResponse, ixId: number): ExchangeProfil
   };
 }
 
+/* ---------------- metro profile ---------------- */
+
+export interface MetroTopNetwork {
+  asn: number;
+  name: string;
+  type: string;
+  capT: number;
+}
+
+export interface MetroProfile {
+  metro: string;
+  country: string;
+  found: boolean;
+  capT: number;
+  dCapT: number;
+  nets: number;
+  dNets: number;
+  ixCount: number;
+  facCount: number;
+  presences: number;
+  rankInApac: number;
+  apacMetroCount: number;
+  equinixSharePct: number;
+  snapshots: string[];
+  capSeries: number[];
+  exchanges: ExchangeRank[];
+  facilities: FacilityRank[];
+  topNetworks: MetroTopNetwork[];
+}
+
+/** Everything about one metro, from the latest snapshot. UNFILTERED —
+    a metro page always shows the whole metro regardless of global scope. */
+export function metroProfile(d: TrendsResponse, metro: string): MetroProfile {
+  const snapshots = uniqSorted(d.snapshots);
+  const latest = snapshots[snapshots.length - 1];
+  const prev = snapshots.length > 1 ? snapshots[snapshots.length - 2] : latest;
+
+  const rowAt = (snap: string) => d.metroTrend.find((r) => r.snapshotDate === snap && r.metro === metro);
+  const cur = rowAt(latest);
+  const before = rowAt(prev);
+  const country = d.metros.find((m) => m.key === metro)?.country || cur?.country || "";
+
+  // APAC rank by capacity
+  const latestMetros = d.metroTrend
+    .filter((r) => r.snapshotDate === latest)
+    .sort((a, b) => (b.capacityMbps || 0) - (a.capacityMbps || 0));
+  const rankInApac = latestMetros.findIndex((r) => r.metro === metro) + 1;
+
+  const capSeries = snapshots.map((s) => (rowAt(s)?.capacityMbps || 0) / 1e6);
+
+  // scope-of-one dataset so we can reuse exchange/facility rankings
+  const one = filterByMetros(d, [metro]);
+  const exchanges = exchangesRanking(one, latest);
+  const facilities = facilitiesRanking(one, latest);
+
+  // Equinix share of this metro's IX capacity
+  const totIx = exchanges.reduce((a, x) => a + x.capT, 0);
+  const eqxIx = exchanges.filter((x) => x.isEquinix).reduce((a, x) => a + x.capT, 0);
+
+  // top networks in this metro by capacity
+  const topNetworks: MetroTopNetwork[] = d.networkTrend
+    .filter((r) => r.snapshotDate === latest && r.metro === metro)
+    .map((r) => ({ asn: r.asn, name: r.networkName, type: r.networkType || "—", capT: (r.capacityMbps || 0) / 1e6 }))
+    .sort((a, b) => b.capT - a.capT)
+    .slice(0, 12);
+
+  return {
+    metro,
+    country,
+    found: Boolean(cur),
+    capT: (cur?.capacityMbps || 0) / 1e6,
+    dCapT: ((cur?.capacityMbps || 0) - (before?.capacityMbps || 0)) / 1e6,
+    nets: cur?.networkCount || 0,
+    dNets: (cur?.networkCount || 0) - (before?.networkCount || 0),
+    ixCount: cur?.ixCount || 0,
+    facCount: cur?.facilityCount || 0,
+    presences: cur?.facilityPresenceCount || 0,
+    rankInApac,
+    apacMetroCount: latestMetros.length,
+    equinixSharePct: totIx ? (eqxIx / totIx) * 100 : 0,
+    snapshots,
+    capSeries,
+    exchanges,
+    facilities,
+    topNetworks,
+  };
+}
+
 /* ---------------- network profile ---------------- */
 
 export interface NetworkMetroFootprint {

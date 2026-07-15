@@ -61,22 +61,24 @@ export default function OverviewPage() {
         <div className="rd-split">
           <Panel title="Metros by deployed capacity" tag={fmtMonth(latest)}>
             {metros.slice(0, 10).map((m, i) => (
-              <div className="rd-mrow" key={m.metro}>
-                <span className="rk rd-num">{i + 1}</span>
-                <span className="nm">
-                  {m.metro} <span className="rd-cc">{m.country}</span>
-                </span>
-                <Bar pct={(m.capT / maxCap) * 100} />
-                <span className="vv rd-num">
-                  <span className="t">
-                    {m.capT.toFixed(1)}
-                    <span className="x"> Tbps</span>
+              <Link className="rd-rowlink" key={m.metro} to={{ pathname: `/metro/${encodeURIComponent(m.metro)}`, search }}>
+                <div className="rd-mrow">
+                  <span className="rk rd-num">{i + 1}</span>
+                  <span className="nm">
+                    {m.metro} <span className="rd-cc">{m.country}</span>
                   </span>
-                  <span className="x">
-                    {m.nets} nets · {m.ix} IX
+                  <Bar pct={(m.capT / maxCap) * 100} />
+                  <span className="vv rd-num">
+                    <span className="t">
+                      {m.capT.toFixed(1)}
+                      <span className="x"> Tbps</span>
+                    </span>
+                    <span className="x">
+                      {m.nets} nets · {m.ix} IX
+                    </span>
                   </span>
-                </span>
-              </div>
+                </div>
+              </Link>
             ))}
           </Panel>
           <Panel title="Movers since last snapshot">

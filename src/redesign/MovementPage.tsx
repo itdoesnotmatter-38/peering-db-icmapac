@@ -146,8 +146,13 @@ export default function MovementPage() {
             <tbody>
               {rows.map((r) => (
                 <tr key={r.metro} className={r.metro === metro ? "selrow" : ""}>
-                  <td className="mname" onClick={() => setMetro(r.metro)}>
-                    {r.metro}
+                  <td className="mname">
+                    <span onClick={() => setMetro(r.metro)} style={{ cursor: "pointer" }}>
+                      {r.metro}
+                    </span>{" "}
+                    <Link to={{ pathname: `/metro/${encodeURIComponent(r.metro)}`, search }} className="rd-metgo" title={`Open ${r.metro} profile`}>
+                      ↗
+                    </Link>
                   </td>
                   {r.cells.map((c, i) => {
                     const v = metric === "cap" ? c.dCapT : c.dNets;

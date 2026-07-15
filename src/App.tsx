@@ -14,6 +14,7 @@ import ExchangePage from "./redesign/ExchangePage";
 import ExchangesPage from "./redesign/ExchangesPage";
 import NetworkPage from "./redesign/NetworkPage";
 import NetworksPage from "./redesign/NetworksPage";
+import MetroPage from "./redesign/MetroPage";
 import RedesignDownloads from "./redesign/DownloadsPage";
 import LivePage from "./redesign/LivePage";
 
@@ -32,6 +33,7 @@ export default function App() {
           <Route path="/exchange/:ixId" element={<ExchangePage />} />
           <Route path="/networks" element={<NetworksPage />} />
           <Route path="/net/:asn" element={<NetworkPage />} />
+          <Route path="/metro/:name" element={<MetroPage />} />
           <Route path="/downloads" element={<RedesignDownloads />} />
           <Route path="/live" element={<LivePage />} />
         </Route>
