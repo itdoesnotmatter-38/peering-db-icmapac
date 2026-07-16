@@ -1005,6 +1005,28 @@ a.rd-legrow:hover { background: var(--surface-2); }
 .rd-mb-head .sub { color: var(--faint); font-size: 11px; }
 .rd-mb-head .tot { margin-left: auto; font-weight: 700; font-size: 13.5px; }
 .rd-mb-legend { margin-top: 8px; }
+/* two-column metro block: matrix on the left, Equinix opportunity panel on the right */
+.rd-mb-body { display: flex; gap: 18px; align-items: stretch; }
+.rd-mb-left { flex: 1 1 auto; min-width: 0; overflow-x: auto; }
+.rd-mb-opp { flex: 0 0 288px; border-left: 1px solid var(--border); padding-left: 18px; display: flex; flex-direction: column; gap: 12px; }
+.rd-opp-h { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--equinix); }
+.rd-opp-lbl { font-size: 10.5px; color: var(--muted); margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.04em; }
+.rd-opp-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.rd-opp-chip {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: 11px; font-weight: 600; padding: 3px 9px; border-radius: 6px;
+  color: var(--equinix); background: var(--equinix-bg);
+  border: 1px dashed color-mix(in srgb, var(--equinix) 42%, transparent);
+  text-decoration: none;
+}
+.rd-opp-chip:hover { background: color-mix(in srgb, var(--equinix) 16%, var(--surface)); }
+.rd-opp-chip .n { font-size: 9px; line-height: 1; background: var(--equinix); color: #fff; border-radius: 8px; padding: 2px 5px; }
+.rd-opp-full { font-size: 12px; color: var(--present); font-weight: 600; }
+.rd-opp-empty { font-size: 11.5px; color: var(--faint); font-style: italic; }
+@media (max-width: 900px) {
+  .rd-mb-body { flex-direction: column; }
+  .rd-mb-opp { flex-basis: auto; border-left: none; border-top: 1px solid var(--border); padding-left: 0; padding-top: 14px; }
+}
 .rd-facchips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
 .rd-facchip {
   font-size: 11px;
