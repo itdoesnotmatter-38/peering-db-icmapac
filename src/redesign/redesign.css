@@ -1007,22 +1007,26 @@ a.rd-legrow:hover { background: var(--surface-2); }
 .rd-mb-head .sub { color: var(--faint); font-size: 11px; }
 .rd-mb-head .tot { margin-left: auto; font-weight: 700; font-size: 13.5px; }
 .rd-mb-legend { margin-top: 8px; }
-/* partitioned per-metro matrix: an "Exchange ports" group and a "Data centres"
-   group, separated by a labelled header row and a vertical divider */
-.rd-amx .rd-grouphead th.grp {
-  text-align: left;
+/* two equal halves — exchange ports | data centres — with the divider fixed at
+   the midpoint so it lines up across every metro block */
+.rd-mb-body { display: flex; align-items: stretch; gap: 16px; }
+.rd-mb-half { flex: 1 1 50%; min-width: 0; }
+.rd-mb-half.rd-mb-right { border-left: 2px solid var(--border-strong); padding-left: 16px; }
+.rd-mb-plabel {
   font-size: 9.5px;
   letter-spacing: 0.09em;
   text-transform: uppercase;
   font-weight: 700;
   color: var(--muted);
-  padding: 0 6px 6px;
-  vertical-align: bottom;
   border-bottom: 1.5px solid var(--border-strong);
+  padding: 0 2px 6px;
+  margin-bottom: 8px;
 }
-.rd-amx .rd-grouphead th.who,
-.rd-amx .rd-grouphead th.gap { border-bottom: none; }
-.rd-amx th.div, .rd-amx td.div { min-width: 22px; width: 22px; border-left: 2px solid var(--border-strong); }
+.rd-mb-scroll { overflow-x: auto; }
+/* fixed, generous header height + fixed row height make both halves floor to the
+   same metrics, so every row lines up across the divider regardless of wrap depth */
+.rd-mb-half .rd-amx thead th { height: 66px; vertical-align: bottom; max-width: 120px; }
+.rd-mb-half .rd-amx tbody td { height: 34px; }
 .rd-facchips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
 .rd-facchip {
   font-size: 11px;

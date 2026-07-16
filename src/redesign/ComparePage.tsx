@@ -592,8 +592,6 @@ export default function ComparePage() {
               b.facCols.length > 0 && profiles.some((p) => p.found && p.netId && (!facMap[p.asn] || facMap[p.asn]?.loading));
             // once live data is in, keep only the data centres a selected network actually sits in
             const shownFacs = facLoading ? b.facCols : b.facCols.filter((f) => profiles.some((p) => isPresent(p.asn, f.facilityId)));
-            const showFacCols = shownFacs.length > 0 || facLoading;
-            const noDcHere = !facLoading && shownFacs.length === 0;
             return (
               <div className="rd-metroblock" key={b.metro}>
                 <div className="rd-mb-head">
@@ -601,103 +599,110 @@ export default function ComparePage() {
                     {b.metro}
                   </Link>
                   <span className="rd-cc">{METRO_CODES[b.metro] || ""}</span>
-                  {noDcHere ? (
-                    <span className="rd-mb-note">
-                      {profiles.length === 1 ? "not in any listed data centre here" : "no selected network in a listed data centre here"}
-                    </span>
-                  ) : null}
                 </div>
-                <div style={{ overflowX: "auto" }}>
-                  <table className="rd-amx compact part">
-                    <thead>
-                      <tr className="rd-grouphead">
-                        <th className="who" />
-                        <th className="grp" colSpan={b.cols.length}>
-                          Exchange ports
-                        </th>
-                        {showFacCols ? <th className="gap div" /> : null}
-                        {showFacCols ? (
-                          <th className="grp" colSpan={shownFacs.length}>
-                            Data centres
-                          </th>
-                        ) : null}
-                      </tr>
-                      <tr>
-                        <th className="who" />
-                        {b.cols.map((c) => (
-                          <th key={c.ixId} className={c.eqx ? "eqx" : ""}>
-                            <Link to={{ pathname: `/exchange/${c.ixId}`, search }}>{c.name}</Link>
-                          </th>
-                        ))}
-                        {showFacCols ? <th className="gap div" /> : null}
-                        {showFacCols
-                          ? shownFacs.map((f) => (
-                              <th key={`f${f.facilityId}`} className={`fac${f.isEquinix ? " eqx" : ""}`} title={`${f.name} · ${f.org}`}>
-                                {f.name}
+                <div className="rd-mb-body">
+                  {/* left half — exchange ports */}
+                  <div className="rd-mb-half">
+                    <div className="rd-mb-plabel">Exchange ports</div>
+                    <div className="rd-mb-scroll">
+                      <table className="rd-amx compact">
+                        <thead>
+                          <tr>
+                            <th className="who" />
+                            {b.cols.map((c) => (
+                              <th key={c.ixId} className={c.eqx ? "eqx" : ""}>
+                                <Link to={{ pathname: `/exchange/${c.ixId}`, search }}>{c.name}</Link>
                               </th>
-                            ))
-                          : null}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {profiles.map((p) => {
-                        const presentHere = !facLoading && shownFacs.some((f) => isPresent(p.asn, f.facilityId));
-                        return (
-                          <tr key={p.asn}>
-                            <td className="who">
-                              <Link to={{ pathname: `/net/${p.asn}`, search }} className="nm rd-netlink">
-                                {p.name.length > 20 ? `${p.name.slice(0, 19)}…` : p.name}
-                              </Link>
-                            </td>
-                            {b.cols.map((c) => {
-                              const port = p.ports.find((x) => x.ixId === c.ixId);
-                              const g = port?.capG || 0;
-                              return (
-                                <td
-                                  key={c.ixId}
-                                  className={`cell rd-num${c.eqx ? " eqxcol" : ""}`}
-                                  style={
-                                    g
-                                      ? {
-                                          background: `color-mix(in srgb, ${c.eqx ? "var(--equinix)" : "var(--accent)"} ${Math.round(
-                                            8 + Math.sqrt(g / Math.max(c.total, 1)) * 34
-                                          )}%, var(--surface))`,
-                                        }
-                                      : undefined
-                                  }
-                                >
-                                  {gLbl(g)}
-                                </td>
-                              );
-                            })}
-                            {showFacCols ? <td className="gap div" /> : null}
-                            {showFacCols ? (
-                              facLoading ? (
-                                shownFacs.map((f) => (
-                                  <td key={`f${f.facilityId}`} className={`cell dot${f.isEquinix ? " eqxcol" : ""}`}>
-                                    …
-                                  </td>
-                                ))
-                              ) : presentHere ? (
-                                shownFacs.map((f) => {
-                                  const on = isPresent(p.asn, f.facilityId);
-                                  return (
-                                    <td key={`f${f.facilityId}`} className={`cell dot${on ? (f.isEquinix ? " on eqx" : " on") : ""}`}>
-                                      {on ? "✓" : "·"}
-                                    </td>
-                                  );
-                                })
-                              ) : (
-                                <td className="cell facnote" colSpan={shownFacs.length}>
-                                  not here
-                                </td>
-                              )
-                            ) : null}
+                            ))}
                           </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
+                        </thead>
+                        <tbody>
+                          {profiles.map((p) => (
+                            <tr key={p.asn}>
+                              <td className="who">
+                                <Link to={{ pathname: `/net/${p.asn}`, search }} className="nm rd-netlink">
+                                  {p.name.length > 20 ? `${p.name.slice(0, 19)}…` : p.name}
+                                </Link>
+                              </td>
+                              {b.cols.map((c) => {
+                                const port = p.ports.find((x) => x.ixId === c.ixId);
+                                const g = port?.capG || 0;
+                                return (
+                                  <td
+                                    key={c.ixId}
+                                    className={`cell rd-num${c.eqx ? " eqxcol" : ""}`}
+                                    style={
+                                      g
+                                        ? {
+                                            background: `color-mix(in srgb, ${c.eqx ? "var(--equinix)" : "var(--accent)"} ${Math.round(
+                                              8 + Math.sqrt(g / Math.max(c.total, 1)) * 34
+                                            )}%, var(--surface))`,
+                                          }
+                                        : undefined
+                                    }
+                                  >
+                                    {gLbl(g)}
+                                  </td>
+                                );
+                              })}
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                  {/* right half — data centres */}
+                  <div className="rd-mb-half rd-mb-right">
+                    <div className="rd-mb-plabel">Data centres</div>
+                    <div className="rd-mb-scroll">
+                      <table className="rd-amx compact">
+                        <thead>
+                          <tr>
+                            {shownFacs.length > 0 ? (
+                              shownFacs.map((f) => (
+                                <th key={`f${f.facilityId}`} className={`fac${f.isEquinix ? " eqx" : ""}`} title={`${f.name} · ${f.org}`}>
+                                  {f.name}
+                                </th>
+                              ))
+                            ) : (
+                              <th className="fac" />
+                            )}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {profiles.map((p) => {
+                            const presentHere = !facLoading && shownFacs.some((f) => isPresent(p.asn, f.facilityId));
+                            return (
+                              <tr key={p.asn}>
+                                {facLoading ? (
+                                  shownFacs.map((f) => (
+                                    <td key={`f${f.facilityId}`} className={`cell dot${f.isEquinix ? " eqxcol" : ""}`}>
+                                      …
+                                    </td>
+                                  ))
+                                ) : shownFacs.length === 0 ? (
+                                  <td className="cell facnote">not here</td>
+                                ) : presentHere ? (
+                                  shownFacs.map((f) => {
+                                    const on = isPresent(p.asn, f.facilityId);
+                                    return (
+                                      <td key={`f${f.facilityId}`} className={`cell dot${on ? (f.isEquinix ? " on eqx" : " on") : ""}`}>
+                                        {on ? "✓" : "·"}
+                                      </td>
+                                    );
+                                  })
+                                ) : (
+                                  <td className="cell facnote" colSpan={shownFacs.length}>
+                                    not here
+                                  </td>
+                                )}
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
                 </div>
               </div>
             );
