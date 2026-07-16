@@ -1015,6 +1015,9 @@ a.rd-legrow:hover { background: var(--surface-2); }
   border: 1px solid var(--border);
 }
 .rd-facchip.eqx { background: var(--equinix-bg); color: var(--equinix); border-color: transparent; font-weight: 600; }
+.rd-facchip .op { color: var(--faint); font-weight: 400; }
+.rd-faceyebrow { padding: 12px 0 2px; }
+.rd-dcsplit { color: var(--muted); }
 
 /* ---------- typeahead ---------- */
 .rd-ta { position: relative; width: 100%; }

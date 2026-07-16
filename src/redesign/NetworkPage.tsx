@@ -153,6 +153,11 @@ export default function NetworkPage() {
   const prev = p.snapshots.length > 1 ? p.snapshots[p.snapshots.length - 2] : latest;
   const maxMetro = visibleFootprint[0]?.capT || 1;
 
+  // facility presence limited to the metros currently in scope — never blended
+  const scopedFacRows = facs.rows.filter((x) => x.metro && visibleFootprint.some((f) => f.metro === x.metro));
+  const eqxDcCount = scopedFacRows.filter((x) => x.isEquinix).length;
+  const compDcCount = scopedFacRows.length - eqxDcCount;
+
   const compareTo = (() => {
     const n = new URLSearchParams(search);
     n.set("nets", String(p.asn));
@@ -265,7 +270,15 @@ export default function NetworkPage() {
         <span className="note rd-num">
           {blocks.length} metro{blocks.length === 1 ? "" : "s"} ·{" "}
           {totalScopedG >= 1000 ? `${(totalScopedG / 1000).toFixed(1)} Tbps` : `${totalScopedG.toFixed(0)} Gbps`} deployed
-          {facs.loading ? " · fetching facilities…" : ""}
+          {facs.loading ? " · fetching facilities…" : scopedFacRows.length ? (
+            <>
+              {" · "}
+              <span className="rd-dcsplit">
+                {scopedFacRows.length} DC — <b style={{ color: "var(--equinix)" }}>{eqxDcCount} Equinix</b>
+                {compDcCount ? <> · {compDcCount} competitor</> : null}
+              </span>
+            </>
+          ) : null}
         </span>
       </div>
 
@@ -345,13 +358,20 @@ export default function NetworkPage() {
               </div>
             )}
             {metroFacs.length ? (
-              <div className="rd-facchips">
-                {metroFacs.map((x) => (
-                  <span key={x.facId} className={`rd-facchip${x.isEquinix ? " eqx" : ""}`} title={`${x.name} · ${x.org}`}>
-                    {x.name.length > 32 ? `${x.name.slice(0, 31)}…` : x.name}
-                  </span>
-                ))}
-              </div>
+              <>
+                <div className="rd-eyebrow rd-faceyebrow">
+                  Data centres · <b style={{ color: "var(--equinix)" }}>{metroFacs.filter((x) => x.isEquinix).length} Equinix</b>
+                  {metroFacs.some((x) => !x.isEquinix) ? ` · ${metroFacs.filter((x) => !x.isEquinix).length} competitor` : ""}
+                </div>
+                <div className="rd-facchips">
+                  {metroFacs.map((x) => (
+                    <span key={x.facId} className={`rd-facchip${x.isEquinix ? " eqx" : ""}`} title={`${x.name} · ${x.org}`}>
+                      {x.name.length > 34 ? `${x.name.slice(0, 33)}…` : x.name}
+                      {showOperator(x.name, x.org) ? <span className="op"> · {x.org.length > 18 ? `${x.org.slice(0, 17)}…` : x.org}</span> : null}
+                    </span>
+                  ))}
+                </div>
+              </>
             ) : !facs.loading && !facs.error ? (
               <div className="rd-facchips">
                 <span className="rd-facchip" style={{ opacity: 0.7 }}>
@@ -365,12 +385,21 @@ export default function NetworkPage() {
 
       <div className="rd-footnote">
         Snapshot-based ({fmtMonth(latest)}) for capacity and metros; facility presence is fetched live from PeeringDB.
-        Every scoped metro renders at once — change the metro scope above and this section follows. Click an exchange in
-        a legend for its profile, or a metro name for the metro view.
+        Every scoped metro renders at once — change the metro scope above and both the allocation and the data-centre
+        presence follow. The Equinix / competitor DC split is the displacement view: competitor DCs in a metro where we
+        also operate are the move-to-Equinix targets. Click an exchange in a legend for its profile, or a metro name for the metro view.
       </div>
       {tipNode}
     </>
   );
+}
+
+// show the operator on a competitor DC only when its name doesn't already carry it
+// (strip punctuation so "Equinix, Inc." matches "Equinix …")
+function showOperator(name: string, org: string): boolean {
+  if (!org || org === "—") return false;
+  const first = org.toLowerCase().split(/\s+/)[0].replace(/[^a-z0-9]/g, "");
+  return first.length > 1 && !name.toLowerCase().includes(first);
 }
 
 function portMini(port: NetworkPort, search: string) {
