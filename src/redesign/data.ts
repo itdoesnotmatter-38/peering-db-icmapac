@@ -1076,6 +1076,65 @@ export function exchangesRanking(fd: TrendsResponse, latest: string): ExchangeRa
     .sort((a, b) => b.capT - a.capT);
 }
 
+export interface IxContributor {
+  asn: number;
+  name: string;
+  /** signed capacity change on this exchange over the window (Gbps) */
+  dG: number;
+}
+
+/** For each exchange, the networks that added/cut the most capacity on it —
+    over the last snapshot (mom) and over ~a quarter (qoq). This is the
+    "what moved the needle" attribution behind each exchange's Δ. */
+export function exchangeMovers(fd: TrendsResponse, latest: string): Map<number, { mom: IxContributor[]; qoq: IxContributor[] }> {
+  const snaps = uniqSorted(fd.snapshots).filter((x) => x <= latest);
+  const li = snaps.length - 1;
+  const out = new Map<number, { mom: IxContributor[]; qoq: IxContributor[] }>();
+  if (li < 1) return out;
+  const pi = li - 1;
+  const qi = li >= 3 ? li - 3 : 0;
+  const idxOf = new Map(snaps.map((s, i) => [s, i]));
+
+  // per exchange → per network capacity (Gbps) at the current, mom-prev and qoq-prev snapshots
+  const per = new Map<number, Map<number, { name: string; cur: number; mom: number; qoq: number }>>();
+  for (const r of fd.networkIxTrend) {
+    const i = idxOf.get(r.snapshotDate);
+    if (i === undefined || (i !== li && i !== pi && i !== qi)) continue;
+    let m = per.get(r.ixId);
+    if (!m) {
+      m = new Map();
+      per.set(r.ixId, m);
+    }
+    let e = m.get(r.asn);
+    if (!e) {
+      e = { name: r.networkName, cur: 0, mom: 0, qoq: 0 };
+      m.set(r.asn, e);
+    }
+    const g = (r.capacityMbps || 0) / 1000;
+    if (i === li) {
+      e.cur += g;
+      e.name = r.networkName || e.name;
+    }
+    if (i === pi) e.mom += g;
+    if (i === qi) e.qoq += g;
+  }
+
+  per.forEach((m, ixId) => {
+    const mom: IxContributor[] = [];
+    const qoq: IxContributor[] = [];
+    m.forEach((e, asn) => {
+      const dM = e.cur - e.mom;
+      const dQ = e.cur - e.qoq;
+      if (Math.abs(dM) >= 1) mom.push({ asn, name: e.name, dG: dM });
+      if (Math.abs(dQ) >= 1) qoq.push({ asn, name: e.name, dG: dQ });
+    });
+    mom.sort((a, b) => Math.abs(b.dG) - Math.abs(a.dG));
+    qoq.sort((a, b) => Math.abs(b.dG) - Math.abs(a.dG));
+    out.set(ixId, { mom: mom.slice(0, 6), qoq: qoq.slice(0, 6) });
+  });
+  return out;
+}
+
 export interface FacilityRank {
   facilityId: number;
   name: string;

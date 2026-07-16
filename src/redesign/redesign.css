@@ -882,6 +882,7 @@ a.rd-pill:hover, button.rd-pill:hover { border-color: var(--accent); cursor: poi
 .rd-dirrow .nm .ty { margin-left: 8px; font-size: 9.5px; color: var(--muted); background: var(--surface-2); border-radius: 5px; padding: 1px 6px; font-weight: 400; }
 .rd-dirrow.eqxrow .nm .ty { background: color-mix(in srgb, var(--equinix) 12%, transparent); }
 .rd-dirrow .pv { font-weight: 700; text-align: right; }
+.rd-dirrow .movable { cursor: help; text-decoration: underline dotted var(--faint); text-underline-offset: 3px; }
 .rd-dirrow .meta { color: var(--faint); font-size: 11px; text-align: right; }
 /* fact-columns variant: capacity | MoM delta | Equinix share | metros */
 .rd-dirrow.facts { grid-template-columns: 26px 1fr 78px 78px 84px 60px; }

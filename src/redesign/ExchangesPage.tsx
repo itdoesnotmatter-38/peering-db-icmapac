@@ -1,8 +1,8 @@
 import React, { useMemo, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { useSnapshot } from "./Shell";
-import { Panel, Sparkline } from "./bits";
-import { ExchangeRank, exchangesRanking, fmtMonth, tokenMatch } from "./data";
+import { Panel, Sparkline, useTooltip } from "./bits";
+import { ExchangeRank, IxContributor, exchangeMovers, exchangesRanking, fmtMonth, tokenMatch } from "./data";
 
 /* Exchanges directory — fact columns instead of a decorative bar:
    trajectory, capacity, MoM capacity change, MoM member change, and
@@ -14,6 +14,29 @@ const GRID = "26px minmax(190px,1fr) 58px 58px 74px 72px 72px 78px 72px 52px";
 const capLbl = (t: number) => (t >= 0.05 ? `${t.toFixed(1)}T` : t > 0 ? `${(t * 1000).toFixed(0)}G` : "—");
 const dLbl = (t: number) =>
   Math.abs(t) < 0.005 ? "·" : `${t > 0 ? "+" : "−"}${Math.abs(t) >= 1 ? Math.abs(t).toFixed(1) + "T" : (Math.abs(t) * 1000).toFixed(0) + "G"}`;
+// signed Gbps delta for the mover tooltip
+const gd = (g: number) => `${g > 0 ? "+" : "−"}${Math.abs(g) >= 1000 ? (Math.abs(g) / 1000).toFixed(1) + "T" : Math.abs(g).toFixed(0) + "G"}`;
+
+// tooltip body: the networks that drove an exchange's capacity change
+function moverTip(title: string, list: IxContributor[]) {
+  return (
+    <>
+      <div className="th">{title}</div>
+      {list.length ? (
+        list.map((mv) => (
+          <div className="tl" key={mv.asn}>
+            <span>{mv.name.length > 24 ? `${mv.name.slice(0, 23)}…` : mv.name}</span>
+            <b className={mv.dG > 0 ? "rd-up" : "rd-down"}>{gd(mv.dG)}</b>
+          </div>
+        ))
+      ) : (
+        <div className="tl">
+          <span>No member-level change</span>
+        </div>
+      )}
+    </>
+  );
+}
 
 export default function ExchangesPage() {
   const { scoped, derived, scopeName } = useSnapshot();
@@ -23,6 +46,8 @@ export default function ExchangesPage() {
   const [sort, setSort] = useState<{ key: SortKey; asc: boolean }>({ key: "cap", asc: false });
 
   const all = useMemo(() => exchangesRanking(scoped, latest), [scoped, latest]);
+  const movers = useMemo(() => exchangeMovers(scoped, latest), [scoped, latest]);
+  const { bind, node: tipNode } = useTooltip();
 
   const filtered = useMemo(() => {
     const base = q.trim() ? all.filter((x) => tokenMatch(q, `${x.name} ${x.metro}`, x.ixId)) : all;
@@ -101,8 +126,18 @@ export default function ExchangesPage() {
               <span className="spk">{x.capT > 0 ? <Sparkline points={x.spark} width={50} height={20} /> : null}</span>
               <span className="spk">{x.metroSharePct > 0 ? <Sparkline points={x.shareSpark} width={50} height={20} /> : null}</span>
               <span className="pv rd-num">{capLbl(x.capT)}</span>
-              <span className={`pv rd-num ${x.dCapT > 0.005 ? "rd-up" : x.dCapT < -0.005 ? "rd-down" : "rd-flat"}`}>{dLbl(x.dCapT)}</span>
-              <span className={`pv rd-num ${x.dCapQ > 0.005 ? "rd-up" : x.dCapQ < -0.005 ? "rd-down" : "rd-flat"}`}>{dLbl(x.dCapQ)}</span>
+              <span
+                className={`pv rd-num movable ${x.dCapT > 0.005 ? "rd-up" : x.dCapT < -0.005 ? "rd-down" : "rd-flat"}`}
+                {...bind(moverTip(`${x.name} — what moved (MoM)`, movers.get(x.ixId)?.mom || []))}
+              >
+                {dLbl(x.dCapT)}
+              </span>
+              <span
+                className={`pv rd-num movable ${x.dCapQ > 0.005 ? "rd-up" : x.dCapQ < -0.005 ? "rd-down" : "rd-flat"}`}
+                {...bind(moverTip(`${x.name} — what moved (QoQ)`, movers.get(x.ixId)?.qoq || []))}
+              >
+                {dLbl(x.dCapQ)}
+              </span>
               <span className={`pv rd-num ${x.dNets > 0 ? "rd-up" : x.dNets < 0 ? "rd-down" : "rd-flat"}`}>
                 {x.dNets === 0 ? "·" : `${x.dNets > 0 ? "+" : "−"}${Math.abs(x.dNets)}`}
               </span>
@@ -114,9 +149,11 @@ export default function ExchangesPage() {
         {!filtered.length ? <div style={{ padding: "16px 12px", color: "var(--muted)", fontSize: 13 }}>No exchanges match “{q}”.</div> : null}
       </Panel>
       <div className="rd-footnote">
-        Click a column to sort; click again to flip. “Δ members” is the competitor early-warning column — an exchange
-        gaining networks month over month is ramping. Metro share is the exchange's slice of its own market's IX capacity.
+        Click a column to sort; click again to flip. Hover Δ MoM or Δ QoQ to see which networks moved the needle. “Δ
+        members” is the competitor early-warning column — an exchange gaining networks month over month is ramping. Metro
+        share is the exchange's slice of its own market's IX capacity.
       </div>
+      {tipNode}
     </>
   );
 }
