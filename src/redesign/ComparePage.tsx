@@ -681,7 +681,7 @@ export default function ComparePage() {
                                     </td>
                                   ))
                                 ) : shownFacs.length === 0 ? (
-                                  <td className="cell facnote">not here</td>
+                                  <td className="cell facnote">not present in this metro</td>
                                 ) : presentHere ? (
                                   shownFacs.map((f) => {
                                     const on = isPresent(p.asn, f.facilityId);
@@ -693,7 +693,7 @@ export default function ComparePage() {
                                   })
                                 ) : (
                                   <td className="cell facnote" colSpan={shownFacs.length}>
-                                    not here
+                                    not present in this metro
                                   </td>
                                 )}
                               </tr>
