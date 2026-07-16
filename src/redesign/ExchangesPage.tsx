@@ -9,7 +9,7 @@ import { ExchangeRank, exchangesRanking, fmtMonth, tokenMatch } from "./data";
    share of its own metro. Columns sort on click; multi-term search. */
 
 type SortKey = "cap" | "delta" | "dnets" | "share" | "nets";
-const GRID = "26px minmax(220px,1fr) 76px 80px 78px 84px 80px 60px";
+const GRID = "26px minmax(220px,1fr) 76px 80px 78px 84px 76px 80px 60px";
 
 const capLbl = (t: number) => (t >= 0.05 ? `${t.toFixed(1)}T` : t > 0 ? `${(t * 1000).toFixed(0)}G` : "—");
 const dLbl = (t: number) =>
@@ -67,6 +67,7 @@ export default function ExchangesPage() {
           <span className="c">
             <Head k="dnets" label="Δ members" />
           </span>
+          <span className="c">Share trend</span>
           <span className="c">
             <Head k="share" label="Metro share" />
           </span>
@@ -90,6 +91,7 @@ export default function ExchangesPage() {
               <span className={`pv rd-num ${x.dNets > 0 ? "rd-up" : x.dNets < 0 ? "rd-down" : "rd-flat"}`}>
                 {x.dNets === 0 ? "·" : `${x.dNets > 0 ? "+" : "−"}${Math.abs(x.dNets)}`}
               </span>
+              <span className="spk">{x.metroSharePct > 0 ? <Sparkline points={x.shareSpark} width={62} height={20} /> : null}</span>
               <span className="pv rd-num">{x.metroSharePct.toFixed(0)}%</span>
               <span className="meta rd-num">{x.nets}</span>
             </div>

@@ -1000,6 +1000,8 @@ export interface ExchangeRank {
   metroSharePct: number;
   /** capacity per snapshot, for row sparklines */
   spark: number[];
+  /** metro-share % per snapshot, for the share sparkline */
+  shareSpark: number[];
 }
 
 /** Exchanges in the (already scope-filtered) dataset, ranked by capacity. */
@@ -1036,10 +1038,17 @@ export function exchangesRanking(fd: TrendsResponse, latest: string): ExchangeRa
 
   let total = 0;
   const metroTotal = new Map<string, number>();
+  const metroTotalPerSnap = new Map<string, number[]>();
   agg.forEach((e) => {
     const c = e.perSnap[li];
     total += c;
     metroTotal.set(e.metro, (metroTotal.get(e.metro) || 0) + c);
+    let arr = metroTotalPerSnap.get(e.metro);
+    if (!arr) {
+      arr = new Array(snaps.length).fill(0);
+      metroTotalPerSnap.set(e.metro, arr);
+    }
+    for (let i = 0; i < e.perSnap.length; i++) arr[i] += e.perSnap[i];
   });
 
   return Array.from(agg.entries())
@@ -1055,6 +1064,10 @@ export function exchangesRanking(fd: TrendsResponse, latest: string): ExchangeRa
       dNets: li > 0 ? e.nets - e.netsPrev : 0,
       metroSharePct: (metroTotal.get(e.metro) || 0) > 0 ? (e.perSnap[li] / (metroTotal.get(e.metro) || 1)) * 100 : 0,
       spark: e.perSnap,
+      shareSpark: (() => {
+        const tot = metroTotalPerSnap.get(e.metro);
+        return e.perSnap.map((c, i) => (tot && tot[i] > 0 ? (c / tot[i]) * 100 : 0));
+      })(),
     }))
     .filter((e) => e.capT > 0 || e.nets > 0)
     .sort((a, b) => b.capT - a.capT);
