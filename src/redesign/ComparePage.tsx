@@ -667,11 +667,14 @@ export default function ComparePage() {
                                   </td>
                                 ))
                               ) : presentHere ? (
-                                shownFacs.map((f) => (
-                                  <td key={`f${f.facilityId}`} className={`cell dot${f.isEquinix ? " eqxcol" : ""}`}>
-                                    {isPresent(p.asn, f.facilityId) ? <span className={f.isEquinix ? "p eqx" : "p"}>●</span> : "·"}
-                                  </td>
-                                ))
+                                shownFacs.map((f) => {
+                                  const on = isPresent(p.asn, f.facilityId);
+                                  return (
+                                    <td key={`f${f.facilityId}`} className={`cell dot${on ? (f.isEquinix ? " on eqx" : " on") : ""}`}>
+                                      {on ? "✓" : "·"}
+                                    </td>
+                                  );
+                                })
                               ) : (
                                 <td className="cell facnote" colSpan={shownFacs.length}>
                                   not here

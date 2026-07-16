@@ -1112,13 +1112,16 @@ a.rd-legrow:hover { background: var(--surface-2); }
 .rd-amx tr.totals td { border-top: 2px solid var(--border-strong); }
 .rd-amx tr.totals td.who { font-weight: 700; color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; }
 .rd-amx th.gap, .rd-amx td.gap { min-width: 14px; width: 14px; padding: 0; }
-.rd-amx td.cell.dot { font-size: 13px; color: var(--faint); }
+.rd-amx td.cell.dot { font-size: 12px; color: var(--faint); min-width: 46px; }
+.rd-amx td.cell.dot.on { background: color-mix(in srgb, var(--accent) 20%, var(--surface)); color: var(--accent); font-weight: 700; }
+.rd-amx td.cell.dot.on.eqx { background: var(--equinix-bg); color: var(--equinix); }
 .rd-amx td.facnote { text-align: left; color: var(--faint); font-style: italic; font-weight: 500; font-size: 11px; padding-left: 12px; white-space: nowrap; }
 .rd-mb-head .rd-mb-note { margin-left: auto; color: var(--faint); font-style: italic; font-size: 11.5px; font-weight: 500; }
-.rd-amx td.cell.dot .p { color: var(--accent); }
-.rd-amx td.cell.dot .p.eqx { color: var(--equinix); }
-.rd-amx.compact thead th { min-width: 64px; max-width: 94px; }
-.rd-amx.compact td.cell { min-width: 58px; padding: 6px 4px; font-size: 11px; }
+/* per-metro detail tables size to their content instead of stretching a lone cell full-width */
+.rd-amx.compact { width: auto; }
+.rd-amx.compact th.who, .rd-amx.compact td.who { min-width: 124px; }
+.rd-amx.compact thead th { min-width: 60px; max-width: 94px; }
+.rd-amx.compact td.cell { min-width: 56px; padding: 6px 4px; font-size: 11px; }
 .rd-trend svg { display: block; }
 
 /* ---------- exchange profile ---------- */
