@@ -1023,6 +1023,9 @@ a.rd-legrow:hover { background: var(--surface-2); }
   margin-bottom: 8px;
 }
 .rd-mb-scroll { overflow-x: auto; }
+/* metro market-share column */
+.rd-amx thead th.shcol { color: var(--accent); }
+.rd-amx.compact td.cell.shcell { color: var(--accent); font-weight: 700; background: var(--accent-soft); }
 /* fixed, generous header height + fixed row height make both halves floor to the
    same metrics, so every row lines up across the divider regardless of wrap depth */
 .rd-mb-half .rd-amx thead th { height: 66px; vertical-align: bottom; max-width: 120px; }

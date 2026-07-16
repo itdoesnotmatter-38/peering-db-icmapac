@@ -161,6 +161,8 @@ export default function ComparePage() {
     [data, effAsns.join(","), asOf]
   );
   const metros = derived.metros.map((m) => m.metro);
+  // total deployed IX capacity per metro (all networks) — denominator for market share
+  const metroTotalCapT = useMemo(() => new Map(derived.metros.map((m) => [m.metro, m.capT])), [derived.metros]);
 
   /* ---------- live facility presence (per selected network, capped) ---------- */
   const [facMap, setFacMap] = useState<Record<number, { loading: boolean; facIds: number[] }>>({});
@@ -609,6 +611,7 @@ export default function ComparePage() {
                         <thead>
                           <tr>
                             <th className="who" />
+                            <th className="shcol">Metro share</th>
                             {b.cols.map((c) => (
                               <th key={c.ixId} className={c.eqx ? "eqx" : ""}>
                                 <Link to={{ pathname: `/exchange/${c.ixId}`, search }}>{c.name}</Link>
@@ -624,6 +627,16 @@ export default function ComparePage() {
                                   {p.name.length > 20 ? `${p.name.slice(0, 19)}…` : p.name}
                                 </Link>
                               </td>
+                              {(() => {
+                                const tot = metroTotalCapT.get(b.metro) || 0;
+                                const cap = metroStat(p, b.metro).capT;
+                                const pct = tot > 0 ? (cap / tot) * 100 : 0;
+                                return (
+                                  <td className="cell rd-num shcell" title={`${cap.toFixed(2)}T of ${tot.toFixed(1)}T total IX capacity in ${b.metro}`}>
+                                    {cap > 0 ? (pct >= 0.05 ? `${pct.toFixed(1)}%` : "<0.1%") : "—"}
+                                  </td>
+                                );
+                              })()}
                               {b.cols.map((c) => {
                                 const port = p.ports.find((x) => x.ixId === c.ixId);
                                 const g = port?.capG || 0;
