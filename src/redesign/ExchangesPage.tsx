@@ -8,8 +8,8 @@ import { ExchangeRank, exchangesRanking, fmtMonth, tokenMatch } from "./data";
    trajectory, capacity, MoM capacity change, MoM member change, and
    share of its own metro. Columns sort on click; multi-term search. */
 
-type SortKey = "cap" | "delta" | "dnets" | "share" | "nets";
-const GRID = "26px minmax(220px,1fr) 76px 80px 78px 84px 76px 80px 60px";
+type SortKey = "cap" | "delta" | "deltaq" | "dnets" | "share" | "nets";
+const GRID = "26px minmax(190px,1fr) 58px 58px 74px 72px 72px 78px 72px 52px";
 
 const capLbl = (t: number) => (t >= 0.05 ? `${t.toFixed(1)}T` : t > 0 ? `${(t * 1000).toFixed(0)}G` : "—");
 const dLbl = (t: number) =>
@@ -27,7 +27,17 @@ export default function ExchangesPage() {
   const filtered = useMemo(() => {
     const base = q.trim() ? all.filter((x) => tokenMatch(q, `${x.name} ${x.metro}`, x.ixId)) : all;
     const val = (x: ExchangeRank) =>
-      sort.key === "cap" ? x.capT : sort.key === "delta" ? x.dCapT : sort.key === "dnets" ? x.dNets : sort.key === "share" ? x.metroSharePct : x.nets;
+      sort.key === "cap"
+        ? x.capT
+        : sort.key === "delta"
+        ? x.dCapT
+        : sort.key === "deltaq"
+        ? x.dCapQ
+        : sort.key === "dnets"
+        ? x.dNets
+        : sort.key === "share"
+        ? x.metroSharePct
+        : x.nets;
     return [...base].sort((a, b) => (sort.asc ? val(a) - val(b) : val(b) - val(a)));
   }, [all, q, sort]);
 
@@ -57,7 +67,8 @@ export default function ExchangesPage() {
         <div className="rd-dirhead" style={{ gridTemplateColumns: GRID }}>
           <span />
           <span>Exchange</span>
-          <span className="c">Trend</span>
+          <span className="c">Capacity trend</span>
+          <span className="c">Share trend</span>
           <span className="c">
             <Head k="cap" label="Capacity" />
           </span>
@@ -65,9 +76,11 @@ export default function ExchangesPage() {
             <Head k="delta" label="Δ MoM" />
           </span>
           <span className="c">
+            <Head k="deltaq" label="Δ QoQ" />
+          </span>
+          <span className="c">
             <Head k="dnets" label="Δ members" />
           </span>
-          <span className="c">Share trend</span>
           <span className="c">
             <Head k="share" label="Metro share" />
           </span>
@@ -85,13 +98,14 @@ export default function ExchangesPage() {
                   {x.metro}
                 </span>
               </span>
-              <span className="spk">{x.capT > 0 ? <Sparkline points={x.spark} width={62} height={20} /> : null}</span>
+              <span className="spk">{x.capT > 0 ? <Sparkline points={x.spark} width={50} height={20} /> : null}</span>
+              <span className="spk">{x.metroSharePct > 0 ? <Sparkline points={x.shareSpark} width={50} height={20} /> : null}</span>
               <span className="pv rd-num">{capLbl(x.capT)}</span>
               <span className={`pv rd-num ${x.dCapT > 0.005 ? "rd-up" : x.dCapT < -0.005 ? "rd-down" : "rd-flat"}`}>{dLbl(x.dCapT)}</span>
+              <span className={`pv rd-num ${x.dCapQ > 0.005 ? "rd-up" : x.dCapQ < -0.005 ? "rd-down" : "rd-flat"}`}>{dLbl(x.dCapQ)}</span>
               <span className={`pv rd-num ${x.dNets > 0 ? "rd-up" : x.dNets < 0 ? "rd-down" : "rd-flat"}`}>
                 {x.dNets === 0 ? "·" : `${x.dNets > 0 ? "+" : "−"}${Math.abs(x.dNets)}`}
               </span>
-              <span className="spk">{x.metroSharePct > 0 ? <Sparkline points={x.shareSpark} width={62} height={20} /> : null}</span>
               <span className="pv rd-num">{x.metroSharePct.toFixed(0)}%</span>
               <span className="meta rd-num">{x.nets}</span>
             </div>

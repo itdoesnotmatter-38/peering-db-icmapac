@@ -994,6 +994,8 @@ export interface ExchangeRank {
   pctOfScope: number;
   /** month-over-month capacity change (Tbps) */
   dCapT: number;
+  /** quarter-over-quarter capacity change (Tbps, vs ~3 snapshots back) */
+  dCapQ: number;
   /** month-over-month member-count change */
   dNets: number;
   /** share of its own metro's IX capacity */
@@ -1061,6 +1063,7 @@ export function exchangesRanking(fd: TrendsResponse, latest: string): ExchangeRa
       nets: e.nets,
       pctOfScope: total ? (e.perSnap[li] / total) * 100 : 0,
       dCapT: li > 0 ? e.perSnap[li] - e.perSnap[li - 1] : 0,
+      dCapQ: li >= 3 ? e.perSnap[li] - e.perSnap[li - 3] : li > 0 ? e.perSnap[li] - e.perSnap[0] : 0,
       dNets: li > 0 ? e.nets - e.netsPrev : 0,
       metroSharePct: (metroTotal.get(e.metro) || 0) > 0 ? (e.perSnap[li] / (metroTotal.get(e.metro) || 1)) * 100 : 0,
       spark: e.perSnap,
