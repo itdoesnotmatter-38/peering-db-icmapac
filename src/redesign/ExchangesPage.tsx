@@ -38,6 +38,48 @@ function moverTip(title: string, list: IxContributor[]) {
   );
 }
 
+// tooltip body: why the exchange's metro share moved — own growth vs the whole metro's
+function shareTip(x: ExchangeRank, sibs: ExchangeRank[]) {
+  const metroDMoM = sibs.reduce((s, e) => s + e.dCapT, 0);
+  const topRival = sibs.filter((e) => e.ixId !== x.ixId).sort((a, b) => b.dCapT - a.dCapT)[0];
+  const n = x.shareSpark.length;
+  const ppMoM = n > 1 ? x.shareSpark[n - 1] - x.shareSpark[n - 2] : 0;
+  const ppQoQ = n >= 4 ? x.shareSpark[n - 1] - x.shareSpark[n - 4] : n > 1 ? x.shareSpark[n - 1] - x.shareSpark[0] : 0;
+  const pp = (v: number) => (Math.abs(v) < 0.05 ? "0pp" : `${v > 0 ? "+" : "−"}${Math.abs(v).toFixed(1)}pp`);
+  const cls = (v: number) => (v > 0.05 ? "rd-up" : v < -0.05 ? "rd-down" : "");
+  return (
+    <>
+      <div className="th">{x.name} — why the share moved</div>
+      <div className="tl">
+        <span>Share of {x.metro}</span>
+        <b>{x.metroSharePct.toFixed(0)}%</b>
+      </div>
+      <div className="tl">
+        <span>Δ share · MoM / QoQ</span>
+        <b>
+          <span className={cls(ppMoM)}>{pp(ppMoM)}</span> / <span className={cls(ppQoQ)}>{pp(ppQoQ)}</span>
+        </b>
+      </div>
+      <div className="tl">
+        <span>This IX (MoM)</span>
+        <b className={cls(x.dCapT)}>{gd(x.dCapT * 1000)}</b>
+      </div>
+      <div className="tl">
+        <span>All {x.metro} IX (MoM)</span>
+        <b className={cls(metroDMoM)}>{gd(metroDMoM * 1000)}</b>
+      </div>
+      {topRival && topRival.dCapT > 0.005 ? (
+        <div className="tl">
+          <span>Gaining most here</span>
+          <b>
+            {topRival.name.length > 16 ? `${topRival.name.slice(0, 15)}…` : topRival.name} {gd(topRival.dCapT * 1000)}
+          </b>
+        </div>
+      ) : null}
+    </>
+  );
+}
+
 export default function ExchangesPage() {
   const { scoped, derived, scopeName } = useSnapshot();
   const { latest } = derived;
@@ -47,6 +89,15 @@ export default function ExchangesPage() {
 
   const all = useMemo(() => exchangesRanking(scoped, latest), [scoped, latest]);
   const movers = useMemo(() => exchangeMovers(scoped, latest), [scoped, latest]);
+  const metroByMetro = useMemo(() => {
+    const m = new Map<string, ExchangeRank[]>();
+    all.forEach((x) => {
+      const a = m.get(x.metro);
+      if (a) a.push(x);
+      else m.set(x.metro, [x]);
+    });
+    return m;
+  }, [all]);
   const { bind, node: tipNode } = useTooltip();
 
   const filtered = useMemo(() => {
@@ -141,7 +192,9 @@ export default function ExchangesPage() {
               <span className={`pv rd-num ${x.dNets > 0 ? "rd-up" : x.dNets < 0 ? "rd-down" : "rd-flat"}`}>
                 {x.dNets === 0 ? "·" : `${x.dNets > 0 ? "+" : "−"}${Math.abs(x.dNets)}`}
               </span>
-              <span className="pv rd-num">{x.metroSharePct.toFixed(0)}%</span>
+              <span className="pv rd-num movable" {...bind(shareTip(x, metroByMetro.get(x.metro) || []))}>
+                {x.metroSharePct.toFixed(0)}%
+              </span>
               <span className="meta rd-num">{x.nets}</span>
             </div>
           </Link>
