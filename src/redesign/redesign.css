@@ -1084,6 +1084,11 @@ a.rd-legrow:hover { background: var(--surface-2); }
   text-align: center;
   vertical-align: bottom;
   min-width: 78px;
+  /* wrap long IX / facility names to as many lines as needed rather than clipping */
+  white-space: normal;
+  overflow-wrap: break-word;
+  line-height: 1.22;
+  max-width: 116px;
 }
 .rd-amx thead th a { color: var(--muted); text-decoration: none; display: block; }
 .rd-amx thead th a:hover { color: var(--accent); }
@@ -1108,9 +1113,11 @@ a.rd-legrow:hover { background: var(--surface-2); }
 .rd-amx tr.totals td.who { font-weight: 700; color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; }
 .rd-amx th.gap, .rd-amx td.gap { min-width: 14px; width: 14px; padding: 0; }
 .rd-amx td.cell.dot { font-size: 13px; color: var(--faint); }
+.rd-amx td.facnote { text-align: left; color: var(--faint); font-style: italic; font-weight: 500; font-size: 11px; padding-left: 12px; white-space: nowrap; }
+.rd-mb-head .rd-mb-note { margin-left: auto; color: var(--faint); font-style: italic; font-size: 11.5px; font-weight: 500; }
 .rd-amx td.cell.dot .p { color: var(--accent); }
 .rd-amx td.cell.dot .p.eqx { color: var(--equinix); }
-.rd-amx.compact thead th { min-width: 64px; }
+.rd-amx.compact thead th { min-width: 64px; max-width: 94px; }
 .rd-amx.compact td.cell { min-width: 58px; padding: 6px 4px; font-size: 11px; }
 .rd-trend svg { display: block; }
 

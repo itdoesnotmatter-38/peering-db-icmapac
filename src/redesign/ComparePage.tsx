@@ -578,89 +578,115 @@ export default function ComparePage() {
           <div className="rd-sec-head" style={{ marginTop: 26 }}>
             <h2>Exchange detail by metro</h2>
             <span className="note">
-              Which exchange each network sits on, per market · Equinix violet · dot = facility presence (live)
+              Which exchange each network sits on, per market · Equinix violet · data-centre columns show only where the
+              network is present (live); a metro with none is labelled
             </span>
           </div>
-          {metroBlocks.map((b) => (
-            <div className="rd-metroblock" key={b.metro}>
-              <div className="rd-mb-head">
-                <Link className="name" to={{ pathname: `/metro/${encodeURIComponent(b.metro)}`, search }}>
-                  {b.metro}
-                </Link>
-                <span className="rd-cc">{METRO_CODES[b.metro] || ""}</span>
-              </div>
-              <div style={{ overflowX: "auto" }}>
-                <table className="rd-amx compact">
-                  <thead>
-                    <tr>
-                      <th className="who" />
-                      {b.cols.map((c) => (
-                        <th key={c.ixId} className={c.eqx ? "eqx" : ""}>
-                          <Link to={{ pathname: `/exchange/${c.ixId}`, search }}>
-                            {c.name.length > 15 ? `${c.name.slice(0, 14)}…` : c.name}
-                          </Link>
-                        </th>
-                      ))}
-                      {asns.length && b.facCols.length ? <th className="gap" /> : null}
-                      {asns.length
-                        ? b.facCols.map((f) => (
-                            <th key={`f${f.facilityId}`} className={`fac${f.isEquinix ? " eqx" : ""}`} title={`${f.name} · ${f.org}`}>
-                              {f.name.length > 13 ? `${f.name.slice(0, 12)}…` : f.name}
-                            </th>
-                          ))
-                        : null}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {profiles.map((p) => {
-                      const fm = facMap[p.asn];
-                      return (
-                        <tr key={p.asn}>
-                          <td className="who">
-                            <Link to={{ pathname: `/net/${p.asn}`, search }} className="nm rd-netlink">
-                              {p.name.length > 20 ? `${p.name.slice(0, 19)}…` : p.name}
-                            </Link>
-                          </td>
-                          {b.cols.map((c) => {
-                            const port = p.ports.find((x) => x.ixId === c.ixId);
-                            const g = port?.capG || 0;
-                            return (
-                              <td
-                                key={c.ixId}
-                                className={`cell rd-num${c.eqx ? " eqxcol" : ""}`}
-                                style={
-                                  g
-                                    ? {
-                                        background: `color-mix(in srgb, ${c.eqx ? "var(--equinix)" : "var(--accent)"} ${Math.round(
-                                          8 + Math.sqrt(g / Math.max(c.total, 1)) * 34
-                                        )}%, var(--surface))`,
-                                      }
-                                    : undefined
-                                }
-                              >
-                                {gLbl(g)}
-                              </td>
-                            );
-                          })}
-                          {asns.length && b.facCols.length ? <td className="gap" /> : null}
-                          {asns.length
-                            ? b.facCols.map((f) => {
-                                const present = fm && !fm.loading && fm.facIds.includes(f.facilityId);
-                                return (
+          {metroBlocks.map((b) => {
+            const isPresent = (asn: number, facId: number) => {
+              const fm = facMap[asn];
+              return !!(fm && !fm.loading && fm.facIds.includes(facId));
+            };
+            // still fetching live presence for any selected, resolvable network?
+            const facLoading =
+              b.facCols.length > 0 && profiles.some((p) => p.found && p.netId && (!facMap[p.asn] || facMap[p.asn]?.loading));
+            // once live data is in, keep only the data centres a selected network actually sits in
+            const shownFacs = facLoading ? b.facCols : b.facCols.filter((f) => profiles.some((p) => isPresent(p.asn, f.facilityId)));
+            const showFacCols = shownFacs.length > 0 || facLoading;
+            const noDcHere = !facLoading && shownFacs.length === 0;
+            return (
+              <div className="rd-metroblock" key={b.metro}>
+                <div className="rd-mb-head">
+                  <Link className="name" to={{ pathname: `/metro/${encodeURIComponent(b.metro)}`, search }}>
+                    {b.metro}
+                  </Link>
+                  <span className="rd-cc">{METRO_CODES[b.metro] || ""}</span>
+                  {noDcHere ? (
+                    <span className="rd-mb-note">
+                      {profiles.length === 1 ? "not in any listed data centre here" : "no selected network in a listed data centre here"}
+                    </span>
+                  ) : null}
+                </div>
+                <div style={{ overflowX: "auto" }}>
+                  <table className="rd-amx compact">
+                    <thead>
+                      <tr>
+                        <th className="who" />
+                        {b.cols.map((c) => (
+                          <th key={c.ixId} className={c.eqx ? "eqx" : ""}>
+                            <Link to={{ pathname: `/exchange/${c.ixId}`, search }}>{c.name}</Link>
+                          </th>
+                        ))}
+                        {showFacCols ? <th className="gap" /> : null}
+                        {showFacCols
+                          ? shownFacs.map((f) => (
+                              <th key={`f${f.facilityId}`} className={`fac${f.isEquinix ? " eqx" : ""}`} title={`${f.name} · ${f.org}`}>
+                                {f.name}
+                              </th>
+                            ))
+                          : null}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {profiles.map((p) => {
+                        const presentHere = !facLoading && shownFacs.some((f) => isPresent(p.asn, f.facilityId));
+                        return (
+                          <tr key={p.asn}>
+                            <td className="who">
+                              <Link to={{ pathname: `/net/${p.asn}`, search }} className="nm rd-netlink">
+                                {p.name.length > 20 ? `${p.name.slice(0, 19)}…` : p.name}
+                              </Link>
+                            </td>
+                            {b.cols.map((c) => {
+                              const port = p.ports.find((x) => x.ixId === c.ixId);
+                              const g = port?.capG || 0;
+                              return (
+                                <td
+                                  key={c.ixId}
+                                  className={`cell rd-num${c.eqx ? " eqxcol" : ""}`}
+                                  style={
+                                    g
+                                      ? {
+                                          background: `color-mix(in srgb, ${c.eqx ? "var(--equinix)" : "var(--accent)"} ${Math.round(
+                                            8 + Math.sqrt(g / Math.max(c.total, 1)) * 34
+                                          )}%, var(--surface))`,
+                                        }
+                                      : undefined
+                                  }
+                                >
+                                  {gLbl(g)}
+                                </td>
+                              );
+                            })}
+                            {showFacCols ? <td className="gap" /> : null}
+                            {showFacCols ? (
+                              facLoading ? (
+                                shownFacs.map((f) => (
                                   <td key={`f${f.facilityId}`} className={`cell dot${f.isEquinix ? " eqxcol" : ""}`}>
-                                    {fm?.loading ? "…" : present ? <span className={f.isEquinix ? "p eqx" : "p"}>●</span> : "·"}
+                                    …
                                   </td>
-                                );
-                              })
-                            : null}
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
+                                ))
+                              ) : presentHere ? (
+                                shownFacs.map((f) => (
+                                  <td key={`f${f.facilityId}`} className={`cell dot${f.isEquinix ? " eqxcol" : ""}`}>
+                                    {isPresent(p.asn, f.facilityId) ? <span className={f.isEquinix ? "p eqx" : "p"}>●</span> : "·"}
+                                  </td>
+                                ))
+                              ) : (
+                                <td className="cell facnote" colSpan={shownFacs.length}>
+                                  not here
+                                </td>
+                              )
+                            ) : null}
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </>
       )}
 
