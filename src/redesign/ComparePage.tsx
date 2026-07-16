@@ -26,8 +26,6 @@ const SEG = ["#2BB0C4", "#4F86D6", "#3FB27F", "#E0A73C", "#D8617D", "#7C8AA0", "
 const MAX_NETS = 8;
 
 const tLabel = (t: number) => (t >= 1 ? `${t.toFixed(1)}T` : t > 0.0005 ? `${(t * 1000).toFixed(0)}G` : "—");
-// "Equinix SG2 - Singapore" → "Equinix SG2" for compact opportunity chips
-const shortFac = (n: string) => n.split(" - ")[0].split(" – ")[0].trim();
 const gLbl = (g: number) => (g >= 1000 ? `${(g / 1000).toFixed(1)}T` : g > 0.5 ? `${g.toFixed(0)}G` : "—");
 const dLbl = (t: number) =>
   Math.abs(t) < 0.005 ? "" : `${t > 0 ? "▲" : "▼"}${Math.abs(t) >= 1 ? Math.abs(t).toFixed(1) + "T" : (Math.abs(t) * 1000).toFixed(0) + "G"}`;
@@ -274,15 +272,11 @@ export default function ComparePage() {
           .map(([ixId, v]) => ({ ixId, ...v }))
           .sort((a, b) => (a.eqx !== b.eqx ? (a.eqx ? -1 : 1) : b.total - a.total))
           .slice(0, 8);
-        const facRank = facilitiesRanking(filterByMetros(data, [metro]), derived.latest);
-        const facCols = facRank.slice(0, 8);
-        // the full Equinix estate in this metro — used for the "room to grow" panel
-        const eqxFacs = facRank.filter((f) => f.isEquinix);
-        const eqxIxs = ixAll.filter((x) => x.metro === metro && x.isEquinix);
-        return { metro, cols, facCols, eqxFacs, eqxIxs };
+        const facCols = facilitiesRanking(filterByMetros(data, [metro]), derived.latest).slice(0, 8);
+        return { metro, cols, facCols };
       })
       .filter((b) => b.cols.length > 0);
-  }, [pivot, profiles, metros, data, derived.latest, ixAll]);
+  }, [pivot, profiles, metros, data, derived.latest]);
 
   const trendSeries = useMemo(
     () =>
@@ -600,18 +594,6 @@ export default function ComparePage() {
             const shownFacs = facLoading ? b.facCols : b.facCols.filter((f) => profiles.some((p) => isPresent(p.asn, f.facilityId)));
             const showFacCols = shownFacs.length > 0 || facLoading;
             const noDcHere = !facLoading && shownFacs.length === 0;
-            // "Room to grow on Equinix": estate in this metro no selected network is on/in yet
-            const hasEqxEstate = b.eqxIxs.length > 0 || b.eqxFacs.length > 0;
-            const ixGaps = b.eqxIxs
-              .map((ix) => ({ id: ix.ixId, name: ix.name, missing: profiles.filter((p) => !p.ports.some((x) => x.ixId === ix.ixId)) }))
-              .filter((g) => g.missing.length > 0);
-            const facGaps = facLoading
-              ? []
-              : b.eqxFacs
-                  .map((f) => ({ id: f.facilityId, name: f.name, missing: profiles.filter((p) => !isPresent(p.asn, f.facilityId)) }))
-                  .filter((g) => g.missing.length > 0);
-            const fullyCovered = hasEqxEstate && !facLoading && !ixGaps.length && !facGaps.length;
-            const multi = profiles.length > 1;
             return (
               <div className="rd-metroblock" key={b.metro}>
                 <div className="rd-mb-head">
@@ -625,10 +607,21 @@ export default function ComparePage() {
                     </span>
                   ) : null}
                 </div>
-                <div className="rd-mb-body">
-                  <div className="rd-mb-left">
-                  <table className="rd-amx compact">
+                <div style={{ overflowX: "auto" }}>
+                  <table className="rd-amx compact part">
                     <thead>
+                      <tr className="rd-grouphead">
+                        <th className="who" />
+                        <th className="grp" colSpan={b.cols.length}>
+                          Exchange ports
+                        </th>
+                        {showFacCols ? <th className="gap div" /> : null}
+                        {showFacCols ? (
+                          <th className="grp" colSpan={shownFacs.length}>
+                            Data centres
+                          </th>
+                        ) : null}
+                      </tr>
                       <tr>
                         <th className="who" />
                         {b.cols.map((c) => (
@@ -636,7 +629,7 @@ export default function ComparePage() {
                             <Link to={{ pathname: `/exchange/${c.ixId}`, search }}>{c.name}</Link>
                           </th>
                         ))}
-                        {showFacCols ? <th className="gap" /> : null}
+                        {showFacCols ? <th className="gap div" /> : null}
                         {showFacCols
                           ? shownFacs.map((f) => (
                               <th key={`f${f.facilityId}`} className={`fac${f.isEquinix ? " eqx" : ""}`} title={`${f.name} · ${f.org}`}>
@@ -677,7 +670,7 @@ export default function ComparePage() {
                                 </td>
                               );
                             })}
-                            {showFacCols ? <td className="gap" /> : null}
+                            {showFacCols ? <td className="gap div" /> : null}
                             {showFacCols ? (
                               facLoading ? (
                                 shownFacs.map((f) => (
@@ -705,55 +698,6 @@ export default function ComparePage() {
                       })}
                     </tbody>
                   </table>
-                  </div>
-                  <div className="rd-mb-opp">
-                    <div className="rd-opp-h">Room to grow on Equinix</div>
-                    {!hasEqxEstate ? (
-                      <div className="rd-opp-empty">No Equinix exchange or data centre in {b.metro}.</div>
-                    ) : facLoading ? (
-                      <div className="rd-opp-empty">Checking data-centre presence…</div>
-                    ) : fullyCovered ? (
-                      <div className="rd-opp-full">On the full Equinix estate here ✓</div>
-                    ) : (
-                      <>
-                        {ixGaps.length ? (
-                          <div className="rd-opp-grp">
-                            <div className="rd-opp-lbl">Exchanges — not on</div>
-                            <div className="rd-opp-chips">
-                              {ixGaps.map((g) => (
-                                <Link
-                                  key={g.id}
-                                  to={{ pathname: `/exchange/${g.id}`, search }}
-                                  className="rd-opp-chip"
-                                  title={multi ? `${g.missing.map((m) => m.name).join(", ")} not on` : g.name}
-                                >
-                                  {g.name}
-                                  {multi ? <span className="n">{g.missing.length}</span> : null}
-                                </Link>
-                              ))}
-                            </div>
-                          </div>
-                        ) : null}
-                        {facGaps.length ? (
-                          <div className="rd-opp-grp">
-                            <div className="rd-opp-lbl">Data centres — not in</div>
-                            <div className="rd-opp-chips">
-                              {facGaps.map((g) => (
-                                <span
-                                  key={g.id}
-                                  className="rd-opp-chip"
-                                  title={multi ? `${g.name} · ${g.missing.map((m) => m.name).join(", ")} not in` : g.name}
-                                >
-                                  {shortFac(g.name)}
-                                  {multi ? <span className="n">{g.missing.length}</span> : null}
-                                </span>
-                              ))}
-                            </div>
-                          </div>
-                        ) : null}
-                      </>
-                    )}
-                  </div>
                 </div>
               </div>
             );
