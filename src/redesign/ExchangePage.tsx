@@ -21,8 +21,8 @@ export default function ExchangePage() {
       <div className="rd-center">
         <h3>Exchange not found</h3>
         <p>No snapshot data for IX id {ixId}.</p>
-        <Link className="rd-btn" to={{ pathname: "/share", search }}>
-          Back to Market share
+        <Link className="rd-btn" to={{ pathname: "/exchanges", search }}>
+          Back to Exchanges
         </Link>
       </div>
     );

@@ -92,8 +92,6 @@ function viewMeta(pathname: string): { title: string; desc: string } {
   }
   const map: Record<string, { title: string; desc: string }> = {
     "/": { title: "Interconnection overview", desc: "Monthly snapshot baseline — loads instantly, refresh live on demand" },
-    "/insights": { title: "Insights", desc: "What moved, what's missing — computed from the last two snapshots" },
-    "/share": { title: "Market share", desc: "Equinix share of PeeringDB-visible interconnection" },
     "/changes": { title: "Market changes", desc: "Where the market moved, and which networks shifted capacity on which exchange" },
     "/compare": { title: "Analysis", desc: "Multi-network workbench — any networks × metros or exchanges, with facilities and trends" },
     "/downloads": { title: "Downloads", desc: "Snapshot files and country / region market exports" },
@@ -390,14 +388,6 @@ export default function Shell() {
           <NavLink to={navTo("/")} end className={({ isActive }) => `rd-nav-item${isActive ? " active" : ""}`}>
             {icons.overview}
             <span>Overview</span>
-          </NavLink>
-          <NavLink to={navTo("/insights")} className={({ isActive }) => `rd-nav-item${isActive ? " active" : ""}`}>
-            {icons.insights}
-            <span>Insights</span>
-          </NavLink>
-          <NavLink to={navTo("/share")} className={({ isActive }) => `rd-nav-item${isActive ? " active" : ""}`}>
-            {icons.share}
-            <span>Market share</span>
           </NavLink>
           <NavLink to={navTo("/changes")} className={({ isActive }) => `rd-nav-item${isActive ? " active" : ""}`}>
             {icons.changes}

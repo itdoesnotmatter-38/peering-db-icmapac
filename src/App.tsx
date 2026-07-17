@@ -6,8 +6,6 @@ import DownloadsPage from "./DownloadsPage";
 import TrendsPage from "./TrendsPage";
 import Shell from "./redesign/Shell";
 import OverviewPage from "./redesign/OverviewPage";
-import InsightsPage from "./redesign/InsightsPage";
-import SharePage from "./redesign/SharePage";
 import ChangesPage from "./redesign/ChangesPage";
 import ExchangePage from "./redesign/ExchangePage";
 import ExchangesPage from "./redesign/ExchangesPage";
@@ -25,8 +23,8 @@ export default function App() {
         {/* Snapshot-first redesigned views */}
         <Route element={<Shell />}>
           <Route path="/" element={<OverviewPage />} />
-          <Route path="/insights" element={<InsightsPage />} />
-          <Route path="/share" element={<SharePage />} />
+          <Route path="/insights" element={<Navigate to="/" replace />} />
+          <Route path="/share" element={<Navigate to="/" replace />} />
           <Route path="/movement" element={<Navigate to="/changes" replace />} />
           <Route path="/changes" element={<ChangesPage />} />
           <Route path="/compare" element={<ComparePage />} />
