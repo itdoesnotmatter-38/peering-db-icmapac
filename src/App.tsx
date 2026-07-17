@@ -1,9 +1,6 @@
 import React from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
-import PeeringDBDashboard from "./PeeringDBDashboard";
 import DetailView from "./DetailView";
-import DownloadsPage from "./DownloadsPage";
-import TrendsPage from "./TrendsPage";
 import Shell from "./redesign/Shell";
 import OverviewPage from "./redesign/OverviewPage";
 import ChangesPage from "./redesign/ChangesPage";
@@ -37,10 +34,7 @@ export default function App() {
           <Route path="/live" element={<LivePage />} />
         </Route>
 
-        {/* Legacy full-page views kept for bookmarks; retired from nav */}
-        <Route path="/live-classic" element={<PeeringDBDashboard />} />
-        <Route path="/downloads-classic" element={<DownloadsPage />} />
-        <Route path="/trends" element={<TrendsPage />} />
+        {/* Legacy entity-detail views kept for old bookmarks; retired from nav */}
         <Route path="/asn/:asn" element={<DetailView />} />
         <Route path="/ix/:ix_id" element={<DetailView />} />
         <Route path="/fac/:fac_id" element={<DetailView />} />
