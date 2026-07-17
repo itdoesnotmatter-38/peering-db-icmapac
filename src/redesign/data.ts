@@ -1135,6 +1135,94 @@ export function exchangeMovers(fd: TrendsResponse, latest: string): Map<number, 
   return out;
 }
 
+/* ---------------- exclusivity ---------------- */
+
+export interface ExclusiveNet {
+  asn: number;
+  name: string;
+  /** value of the exclusive — port capacity on that IX (Gbps), or total deployed capacity for DC exclusives */
+  capG: number;
+}
+
+export interface IxExclusiveRow {
+  ixId: number;
+  name: string;
+  isEquinix: boolean;
+  /** member networks on this IX (route servers excluded) */
+  members: number;
+  /** networks on this IX and NO other IX in the same metro, biggest port first */
+  exclusives: ExclusiveNet[];
+}
+
+const isRouteServerName = (n: string) => /route server|route-server|rs[0-9]* ?only/i.test(n || "");
+
+/** Per metro: each exchange with the networks reachable ONLY there (on no other
+    IX in that metro). Snapshot-based; infrastructure/route-server ASNs excluded. */
+export function ixExclusivesByMetro(fd: TrendsResponse, latest: string): Map<string, IxExclusiveRow[]> {
+  interface NetAcc {
+    name: string;
+    ports: Map<number, number>; // ixId -> capG
+  }
+  const perMetro = new Map<string, Map<number, NetAcc>>();
+  const ixMeta = new Map<string, Map<number, { name: string; members: Set<number> }>>();
+  for (const r of fd.networkIxTrend) {
+    if (r.snapshotDate !== latest) continue;
+    if (isRouteServerName(r.networkName)) continue;
+    let nets = perMetro.get(r.metro);
+    if (!nets) {
+      nets = new Map();
+      perMetro.set(r.metro, nets);
+    }
+    let n = nets.get(r.asn);
+    if (!n) {
+      n = { name: r.networkName, ports: new Map() };
+      nets.set(r.asn, n);
+    }
+    n.name = r.networkName || n.name;
+    n.ports.set(r.ixId, (n.ports.get(r.ixId) || 0) + (r.capacityMbps || 0) / 1000);
+    let ixm = ixMeta.get(r.metro);
+    if (!ixm) {
+      ixm = new Map();
+      ixMeta.set(r.metro, ixm);
+    }
+    let ix = ixm.get(r.ixId);
+    if (!ix) {
+      ix = { name: r.ixName, members: new Set() };
+      ixm.set(r.ixId, ix);
+    }
+    ix.name = r.ixName || ix.name;
+    ix.members.add(r.asn);
+  }
+
+  const out = new Map<string, IxExclusiveRow[]>();
+  perMetro.forEach((nets, metro) => {
+    const ixm = ixMeta.get(metro);
+    if (!ixm) return;
+    const excl = new Map<number, ExclusiveNet[]>();
+    nets.forEach((n, asn) => {
+      if (n.ports.size !== 1) return; // on more than one IX here → not exclusive
+      const [ixId, capG] = Array.from(n.ports.entries())[0];
+      let a = excl.get(ixId);
+      if (!a) {
+        a = [];
+        excl.set(ixId, a);
+      }
+      a.push({ asn, name: n.name, capG });
+    });
+    const rows: IxExclusiveRow[] = Array.from(ixm.entries())
+      .map(([ixId, m]) => ({
+        ixId,
+        name: m.name,
+        isEquinix: isEquinixIx(m.name),
+        members: m.members.size,
+        exclusives: (excl.get(ixId) || []).sort((a, b) => b.capG - a.capG),
+      }))
+      .sort((a, b) => b.exclusives.length - a.exclusives.length);
+    out.set(metro, rows);
+  });
+  return out;
+}
+
 export interface FacilityRank {
   facilityId: number;
   name: string;

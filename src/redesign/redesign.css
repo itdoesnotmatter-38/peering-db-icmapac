@@ -1024,6 +1024,9 @@ a.rd-legrow:hover { background: var(--surface-2); }
   margin-bottom: 8px;
 }
 .rd-mb-scroll { overflow-x: auto; }
+/* exclusivity rows: full-width clickable rank rows + expandable member list */
+.rd-exrow { width: 100%; text-align: left; }
+.rd-exlist { margin: 2px 0 8px 22px; border-left: 2px solid var(--border); }
 /* per-IX share of the network's metro capacity, shown under each capacity cell */
 .rd-amx td.cell .d.shpct { color: var(--muted); font-weight: 600; opacity: 0.9; }
 /* fixed, generous header height + fixed row height make both halves floor to the

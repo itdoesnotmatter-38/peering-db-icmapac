@@ -4,6 +4,7 @@ import DetailView from "./DetailView";
 import Shell from "./redesign/Shell";
 import OverviewPage from "./redesign/OverviewPage";
 import ChangesPage from "./redesign/ChangesPage";
+import ExclusivityPage from "./redesign/ExclusivityPage";
 import ExchangePage from "./redesign/ExchangePage";
 import ExchangesPage from "./redesign/ExchangesPage";
 import NetworkPage from "./redesign/NetworkPage";
@@ -25,6 +26,7 @@ export default function App() {
           <Route path="/share" element={<Navigate to="/" replace />} />
           <Route path="/movement" element={<Navigate to="/changes" replace />} />
           <Route path="/changes" element={<ChangesPage />} />
+          <Route path="/exclusive" element={<ExclusivityPage />} />
           <Route path="/compare" element={<ComparePage />} />
           <Route path="/exchanges" element={<ExchangesPage />} />
           <Route path="/exchange/:ixId" element={<ExchangePage />} />

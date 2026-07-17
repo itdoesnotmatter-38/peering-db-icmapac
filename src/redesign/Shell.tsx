@@ -96,6 +96,7 @@ function viewMeta(pathname: string): { title: string; desc: string } {
   const map: Record<string, { title: string; desc: string }> = {
     "/": { title: "Interconnection overview", desc: "Monthly snapshot baseline — loads instantly, refresh live on demand" },
     "/changes": { title: "Market changes", desc: "Where the market moved, and which networks shifted capacity on which exchange" },
+    "/exclusive": { title: "Exclusive networks", desc: "Networks reachable at only one exchange or data centre in each metro" },
     "/compare": { title: "Analysis", desc: "Multi-network workbench — any networks × metros or exchanges, with facilities and trends" },
     "/downloads": { title: "Downloads", desc: "Snapshot files and country / region market exports" },
     "/live": { title: "Live explore", desc: "Today's PeeringDB ports for one metro, fetched on demand" },
@@ -395,6 +396,10 @@ export default function Shell() {
           <NavLink to={navTo("/changes")} className={({ isActive }) => `rd-nav-item${isActive ? " active" : ""}`}>
             {icons.changes}
             <span>Market changes</span>
+          </NavLink>
+          <NavLink to={navTo("/exclusive")} className={({ isActive }) => `rd-nav-item${isActive ? " active" : ""}`}>
+            {icons.share}
+            <span>Exclusivity</span>
           </NavLink>
           <NavLink to={navTo("/compare")} className={({ isActive }) => `rd-nav-item${isActive ? " active" : ""}`}>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
