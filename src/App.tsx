@@ -9,6 +9,7 @@ import ExchangesPage from "./redesign/ExchangesPage";
 import NetworkPage from "./redesign/NetworkPage";
 import NetworksPage from "./redesign/NetworksPage";
 import MetroPage from "./redesign/MetroPage";
+import FacilityPage from "./redesign/FacilityPage";
 import ComparePage from "./redesign/ComparePage";
 import RedesignDownloads from "./redesign/DownloadsPage";
 import LivePage from "./redesign/LivePage";
@@ -30,6 +31,7 @@ export default function App() {
           <Route path="/networks" element={<NetworksPage />} />
           <Route path="/net/:asn" element={<NetworkPage />} />
           <Route path="/metro/:name" element={<MetroPage />} />
+          <Route path="/fac/:facId" element={<FacilityPage />} />
           <Route path="/downloads" element={<RedesignDownloads />} />
           <Route path="/live" element={<LivePage />} />
         </Route>
@@ -37,7 +39,6 @@ export default function App() {
         {/* Legacy entity-detail views kept for old bookmarks; retired from nav */}
         <Route path="/asn/:asn" element={<DetailView />} />
         <Route path="/ix/:ix_id" element={<DetailView />} />
-        <Route path="/fac/:fac_id" element={<DetailView />} />
       </Routes>
     </BrowserRouter>
   );

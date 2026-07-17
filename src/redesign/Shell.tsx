@@ -90,6 +90,9 @@ function viewMeta(pathname: string): { title: string; desc: string } {
   if (pathname.startsWith("/metro")) {
     return { title: "Metro profile", desc: "Everything in one metro — exchanges, facilities, networks, and Equinix share" };
   }
+  if (pathname.startsWith("/fac")) {
+    return { title: "Data-centre profile", desc: "Which networks are in one facility, its metro rank, and network-count trend" };
+  }
   const map: Record<string, { title: string; desc: string }> = {
     "/": { title: "Interconnection overview", desc: "Monthly snapshot baseline — loads instantly, refresh live on demand" },
     "/changes": { title: "Market changes", desc: "Where the market moved, and which networks shifted capacity on which exchange" },

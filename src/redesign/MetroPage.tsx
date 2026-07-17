@@ -82,13 +82,15 @@ export default function MetroPage() {
           </Panel>
           <Panel title="Facilities in this metro" tag={fmtMonth(latest)}>
             {p.facilities.slice(0, 12).map((f) => (
-              <div className={`rd-shrow${f.isEquinix ? " eqxrow" : ""}`} key={f.facilityId} style={{ gridTemplateColumns: "1fr 1fr 44px" }}>
-                <span className="nm" style={f.isEquinix ? { color: "var(--equinix)" } : undefined} title={f.name}>
-                  {f.name.length > 24 ? `${f.name.slice(0, 23)}…` : f.name}
-                </span>
-                <Bar pct={(f.networkCount / maxFac) * 100} color={f.isEquinix ? "var(--equinix)" : "var(--border-strong)"} />
-                <span className="pv rd-num">{f.networkCount}</span>
-              </div>
+              <Link key={f.facilityId} to={{ pathname: `/fac/${f.facilityId}`, search }} className="rd-rowlink">
+                <div className={`rd-shrow${f.isEquinix ? " eqxrow" : ""}`} style={{ gridTemplateColumns: "1fr 1fr 44px" }}>
+                  <span className="nm" style={f.isEquinix ? { color: "var(--equinix)" } : undefined} title={f.name}>
+                    {f.name.length > 24 ? `${f.name.slice(0, 23)}…` : f.name}
+                  </span>
+                  <Bar pct={(f.networkCount / maxFac) * 100} color={f.isEquinix ? "var(--equinix)" : "var(--border-strong)"} />
+                  <span className="pv rd-num">{f.networkCount}</span>
+                </div>
+              </Link>
             ))}
           </Panel>
         </div>

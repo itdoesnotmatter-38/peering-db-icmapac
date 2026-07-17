@@ -365,10 +365,10 @@ export default function NetworkPage() {
                 </div>
                 <div className="rd-facchips">
                   {metroFacs.map((x) => (
-                    <span key={x.facId} className={`rd-facchip${x.isEquinix ? " eqx" : ""}`} title={`${x.name} · ${x.org}`}>
+                    <Link key={x.facId} to={{ pathname: `/fac/${x.facId}`, search }} className={`rd-facchip${x.isEquinix ? " eqx" : ""}`} title={`${x.name} · ${x.org}`}>
                       {x.name.length > 34 ? `${x.name.slice(0, 33)}…` : x.name}
                       {showOperator(x.name, x.org) ? <span className="op"> · {x.org.length > 18 ? `${x.org.slice(0, 17)}…` : x.org}</span> : null}
-                    </span>
+                    </Link>
                   ))}
                 </div>
               </>

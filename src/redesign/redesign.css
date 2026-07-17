@@ -1038,8 +1038,12 @@ a.rd-legrow:hover { background: var(--surface-2); }
   background: var(--surface-2);
   color: var(--muted);
   border: 1px solid var(--border);
+  text-decoration: none;
+  display: inline-block;
 }
+a.rd-facchip:hover { border-color: var(--accent); color: var(--accent); }
 .rd-facchip.eqx { background: var(--equinix-bg); color: var(--equinix); border-color: transparent; font-weight: 600; }
+a.rd-facchip.eqx:hover { color: var(--equinix); box-shadow: inset 0 0 0 1px var(--equinix); }
 .rd-facchip .op { color: var(--faint); font-weight: 400; }
 .rd-faceyebrow { padding: 12px 0 2px; }
 .rd-dcsplit { color: var(--muted); }

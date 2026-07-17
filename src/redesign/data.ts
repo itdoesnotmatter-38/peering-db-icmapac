@@ -1184,6 +1184,71 @@ export function facilitiesRanking(fd: TrendsResponse, latest: string): FacilityR
     .sort((a, b) => b.networkCount - a.networkCount);
 }
 
+export interface FacilityProfile {
+  found: boolean;
+  facId: number;
+  name: string;
+  org: string;
+  metro: string;
+  country: string;
+  isEquinix: boolean;
+  /** networks present at latest */
+  netCount: number;
+  /** MoM change in network count */
+  dNet: number;
+  /** network count per snapshot */
+  netSeries: number[];
+  snapshots: string[];
+  /** rank among this metro's data centres by network presence */
+  metroRank: number;
+  metroFacCount: number;
+  /** this DC's share of the metro's total network-facility presences */
+  metroSharePct: number;
+}
+
+/** Snapshot-based profile of a single data centre (facility). Members come
+    live from netfac; this covers the trend and the metro context. */
+export function facilityProfile(d: TrendsResponse, facId: number, asOf?: string): FacilityProfile {
+  const snapshots = snapshotsUpTo(d.snapshots, asOf);
+  const latest = snapshots[snapshots.length - 1];
+  const prev = snapshots.length > 1 ? snapshots[snapshots.length - 2] : latest;
+  const rows = d.facilityTrend.filter((r) => r.facilityId === facId);
+  const empty: FacilityProfile = {
+    found: false, facId, name: "", org: "—", metro: "", country: "", isEquinix: false,
+    netCount: 0, dNet: 0, netSeries: [], snapshots, metroRank: 0, metroFacCount: 0, metroSharePct: 0,
+  };
+  if (!rows.length) return empty;
+  const latestRow = rows.find((r) => r.snapshotDate === latest) || rows[rows.length - 1];
+  const metro = latestRow.metro;
+  const org = latestRow.facilityOrgName || "—";
+  const netSeries = snapshots.map((s) => rows.find((r) => r.snapshotDate === s)?.networkCount || 0);
+  const netCount = netSeries[netSeries.length - 1];
+  const prevCount = rows.find((r) => r.snapshotDate === prev)?.networkCount || 0;
+
+  // metro context: rank + share among the metro's data centres at latest
+  const metroFacs = d.facilityTrend.filter((r) => r.snapshotDate === latest && r.metro === metro);
+  const ranked = metroFacs.map((r) => ({ id: r.facilityId, n: r.networkCount || 0 })).sort((a, b) => b.n - a.n);
+  const metroTotalPres = ranked.reduce((a, x) => a + x.n, 0);
+  const country = d.metros.find((m) => m.key === metro)?.country || "";
+
+  return {
+    found: true,
+    facId,
+    name: latestRow.facilityName,
+    org,
+    metro,
+    country,
+    isEquinix: isEquinixFacilityOrg(org),
+    netCount,
+    dNet: netCount - prevCount,
+    netSeries,
+    snapshots,
+    metroRank: ranked.findIndex((x) => x.id === facId) + 1,
+    metroFacCount: ranked.length,
+    metroSharePct: metroTotalPres ? (netCount / metroTotalPres) * 100 : 0,
+  };
+}
+
 export interface NetworkDirEntry {
   asn: number;
   name: string;
