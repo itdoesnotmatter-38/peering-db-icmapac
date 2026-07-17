@@ -1,5 +1,5 @@
 import React from "react";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import PeeringDBDashboard from "./PeeringDBDashboard";
 import DetailView from "./DetailView";
 import DownloadsPage from "./DownloadsPage";
@@ -8,7 +8,6 @@ import Shell from "./redesign/Shell";
 import OverviewPage from "./redesign/OverviewPage";
 import InsightsPage from "./redesign/InsightsPage";
 import SharePage from "./redesign/SharePage";
-import MovementPage from "./redesign/MovementPage";
 import ChangesPage from "./redesign/ChangesPage";
 import ExchangePage from "./redesign/ExchangePage";
 import ExchangesPage from "./redesign/ExchangesPage";
@@ -28,7 +27,7 @@ export default function App() {
           <Route path="/" element={<OverviewPage />} />
           <Route path="/insights" element={<InsightsPage />} />
           <Route path="/share" element={<SharePage />} />
-          <Route path="/movement" element={<MovementPage />} />
+          <Route path="/movement" element={<Navigate to="/changes" replace />} />
           <Route path="/changes" element={<ChangesPage />} />
           <Route path="/compare" element={<ComparePage />} />
           <Route path="/exchanges" element={<ExchangesPage />} />

@@ -2,12 +2,14 @@ import React, { useMemo, useState } from "react";
 import { Link, useLocation, useSearchParams } from "react-router-dom";
 import { useSnapshot } from "./Shell";
 import { DualRange, Kpi, useTooltip } from "./bits";
-import { METRO_CODES, ShiftStatus, fmtDayMonth, marketChanges, shiftColumns, tokenMatch } from "./data";
+import { METRO_CODES, ShiftStatus, fmtDayMonth, marketChanges, movementHeatmap, shiftColumns, tokenMatch } from "./data";
 
-/* Market-changes deep dive: a network × exchange matrix of port-capacity
-   change between two snapshots. Cell = how much a network grew/shrank its
-   port at that IX. Surfaces upgrades, reductions, and migrations (capacity
-   moved between exchanges) that a flat list can't show. */
+/* Market changes — one page, two layers:
+   (1) the where/when heatmap (metros × months of net change), a selector —
+       click a cell to focus that metro and set the period; and
+   (2) the who/what shift matrix (network × exchange port-capacity change)
+       over the selected period, filtered to the focused metro.
+   A single dual-range control drives the period for both. */
 
 type Filter = "all" | "up" | "down" | "added" | "removed" | "migration";
 
@@ -28,13 +30,13 @@ const gLabel = (g: number) => {
 };
 
 export default function ChangesPage() {
-  const { scoped, derived } = useSnapshot();
+  const { scoped, derived, asOf } = useSnapshot();
   const { snapshots } = derived;
   const { search } = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
   const { bind, node: tipNode } = useTooltip();
 
-  // deep-link params (from a Movement cell): from / to / focus (metro)
+  // deep-link params: from / to / focus (metro)
   const pFrom = searchParams.get("from");
   const pTo = searchParams.get("to");
   const focus = searchParams.get("focus");
@@ -59,18 +61,51 @@ export default function ChangesPage() {
   const to = snapshots[range[1]] || snapshots[snapshots.length - 1];
   const [filter, setFilter] = useState<Filter>("all");
   const [q, setQ] = useState("");
+  const [metric, setMetric] = useState<"cap" | "nets">("cap");
 
-  const clearFocus = () =>
+  const setFocus = (m: string | null) =>
     setSearchParams(
       (prev) => {
         const next = new URLSearchParams(prev);
-        next.delete("focus");
+        if (m) next.set("focus", m);
+        else next.delete("focus");
         return next;
       },
       { replace: true }
     );
 
+  const heat = useMemo(() => movementHeatmap(scoped, asOf), [scoped, asOf]);
   const mc = useMemo(() => marketChanges(scoped, from, to), [scoped, from, to]);
+
+  // click a heatmap cell → focus that metro and set the period to that month
+  const pickCell = (metro: string, ti: number) => {
+    const t = heat.transitions[ti];
+    if (t) {
+      const fi = snapshots.indexOf(t.from);
+      const tii = snapshots.indexOf(t.to);
+      if (fi >= 0 && tii > fi) setRange([fi, tii]);
+    }
+    setFocus(metro);
+  };
+  // is heatmap column ti inside the selected period?
+  const inRange = (ti: number) => {
+    const t = heat.transitions[ti];
+    if (!t) return false;
+    const ii = snapshots.indexOf(t.to);
+    return ii > range[0] && ii <= range[1];
+  };
+
+  const heatColor = (v: number) => {
+    const max = metric === "cap" ? heat.maxAbsCapT : heat.maxAbsNets;
+    if (Math.abs(v) < (metric === "cap" ? 0.005 : 0.5)) return "var(--surface-2)";
+    const pct = Math.sqrt(Math.min(1, Math.abs(v) / max));
+    const hue = v > 0 ? "var(--present)" : "var(--gap)";
+    return `color-mix(in srgb, ${hue} ${Math.round(8 + pct * 58)}%, var(--surface))`;
+  };
+  const heatText = (c: { dCapT: number; dNets: number }) => {
+    if (metric === "cap") return Math.abs(c.dCapT) < 0.05 ? "·" : `${c.dCapT > 0 ? "+" : "−"}${Math.abs(c.dCapT).toFixed(1)}`;
+    return c.dNets === 0 ? "·" : `${c.dNets > 0 ? "+" : "−"}${Math.abs(c.dNets)}`;
+  };
 
   const filtered = useMemo(() => {
     const rows = mc.networks
@@ -81,10 +116,7 @@ export default function ChangesPage() {
   }, [mc, filter, focus, q]);
 
   const columns = useMemo(() => shiftColumns(filtered, 10), [filtered]);
-  const maxAbs = useMemo(
-    () => Math.max(1, ...filtered.flatMap((n) => n.cells.map((c) => Math.abs(c.changeG)))),
-    [filtered]
-  );
+  const maxAbs = useMemo(() => Math.max(1, ...filtered.flatMap((n) => n.cells.map((c) => Math.abs(c.changeG)))), [filtered]);
 
   const cellColor = (g: number) => {
     if (Math.abs(g) < 1) return "var(--surface-2)";
@@ -110,6 +142,7 @@ export default function ChangesPage() {
   };
 
   const cellFor = (net: (typeof filtered)[number], ixId: number) => net.cells.find((c) => c.ixId === ixId);
+  const enoughSnaps = heat.transitions.length > 0;
 
   return (
     <>
@@ -117,7 +150,10 @@ export default function ChangesPage() {
       <div className="rd-slider-bar" style={{ alignItems: "center" }}>
         <div className="rd-slider-block" style={{ minWidth: 280 }}>
           <span className="rd-eyebrow">
-            Period · <b className="rd-num" style={{ color: "var(--text)" }}>{fmtDayMonth(from)} → {fmtDayMonth(to)}</b>
+            Period ·{" "}
+            <b className="rd-num" style={{ color: "var(--text)" }}>
+              {fmtDayMonth(from)} → {fmtDayMonth(to)}
+            </b>
           </span>
           <DualRange count={snapshots.length} from={range[0]} to={range[1]} onChange={(f, t) => setRange([f, t])} />
           <div className="rd-slider-labels">
@@ -145,7 +181,7 @@ export default function ChangesPage() {
         </div>
         <div className="rd-grow" />
         {focus ? (
-          <button className="rd-chip on" onClick={clearFocus} title="Clear metro focus">
+          <button className="rd-chip on" onClick={() => setFocus(null)} title="Clear metro focus">
             {focus} ✕
           </button>
         ) : null}
@@ -158,6 +194,97 @@ export default function ChangesPage() {
         </div>
       </div>
 
+      {/* WHERE / WHEN — the heatmap selector */}
+      {enoughSnaps ? (
+        <div className="rd-section">
+          <div className="rd-sec-head">
+            <h2>Where the market moved</h2>
+            <div className="rd-chips" style={{ marginBottom: 0 }}>
+              <button className={`rd-chip${metric === "cap" ? " on" : ""}`} onClick={() => setMetric("cap")}>
+                Capacity Δ (Tbps)
+              </button>
+              <button className={`rd-chip${metric === "nets" ? " on" : ""}`} onClick={() => setMetric("nets")}>
+                Networks Δ
+              </button>
+            </div>
+          </div>
+          <div className="rd-heatwrap">
+            <table className="rd-heat">
+              <thead>
+                <tr>
+                  <th className="mname" />
+                  {heat.transitions.map((t, i) => (
+                    <th
+                      key={t.to}
+                      className={inRange(i) ? "selcol" : ""}
+                      onClick={() => {
+                        const fi = snapshots.indexOf(t.from);
+                        const tii = snapshots.indexOf(t.to);
+                        if (fi >= 0 && tii > fi) setRange([fi, tii]);
+                      }}
+                    >
+                      {fmtDayMonth(t.to)}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {heat.rows.map((r) => (
+                  <tr key={r.metro} className={r.metro === focus ? "selrow" : ""}>
+                    <td className="mname">
+                      <span onClick={() => setFocus(r.metro === focus ? null : r.metro)} style={{ cursor: "pointer" }}>
+                        {r.metro}
+                      </span>{" "}
+                      <Link to={{ pathname: `/metro/${encodeURIComponent(r.metro)}`, search }} className="rd-metgo" title={`Open ${r.metro} profile`}>
+                        ↗
+                      </Link>
+                    </td>
+                    {r.cells.map((c, i) => {
+                      const v = metric === "cap" ? c.dCapT : c.dNets;
+                      const t = heat.transitions[i];
+                      const isSel = r.metro === focus && inRange(i);
+                      return (
+                        <td
+                          key={i}
+                          className={`cell rd-num${isSel ? " selcell" : ""}${inRange(i) ? " selcol" : ""}`}
+                          style={{ background: heatColor(v) }}
+                          onClick={() => pickCell(r.metro, i)}
+                          {...bind(
+                            <>
+                              <div className="th">
+                                {r.metro} · {fmtDayMonth(t.from)} → {fmtDayMonth(t.to)}
+                              </div>
+                              <div className="tl">
+                                <span>Capacity</span>
+                                <b className={c.dCapT >= 0 ? "rd-up" : "rd-down"}>
+                                  {c.dCapT >= 0 ? "+" : "−"}
+                                  {Math.abs(c.dCapT).toFixed(2)} Tbps
+                                </b>
+                              </div>
+                              <div className="tl">
+                                <span>Networks</span>
+                                <b className={c.dNets >= 0 ? "rd-up" : "rd-down"}>
+                                  {c.dNets >= 0 ? "+" : "−"}
+                                  {Math.abs(c.dNets)}
+                                </b>
+                              </div>
+                              <div className="thint">Click to focus this metro &amp; month</div>
+                            </>
+                          )}
+                        >
+                          {heatText(c)}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ) : null}
+
+      {/* period summary */}
       <div className="rd-kpis four">
         <Kpi label="Upgraded capacity" value={(mc.summary.upgradedG / 1000).toFixed(1)} unit="Tbps" deltaNode={<span className="rd-up">▲ ports grown</span>} />
         <Kpi label="Reduced capacity" value={(mc.summary.reducedG / 1000).toFixed(1)} unit="Tbps" deltaNode={<span className="rd-down">▼ ports cut</span>} />
@@ -169,8 +296,9 @@ export default function ChangesPage() {
         />
       </div>
 
+      {/* WHO / WHAT — the shift matrix */}
       <div className="rd-sec-head">
-        <h2>Who moved capacity, and where</h2>
+        <h2>Who moved capacity, and where{focus ? ` · ${focus}` : ""}</h2>
         <span className="note">
           {fmtDayMonth(from)} → {fmtDayMonth(to)} · rows = networks, columns = exchanges (Equinix pinned) · green grew, red cut
         </span>
@@ -249,16 +377,17 @@ export default function ChangesPage() {
 
       {!filtered.length ? (
         <div style={{ padding: "18px 4px", color: "var(--muted)", fontSize: 13 }}>
-          No {filter === "all" ? "capacity changes" : `${FILTERS.find((f) => f.id === filter)?.label.toLowerCase()}`} in
-          this period for the selected metros. Try a wider date range or more metros.
+          No {filter === "all" ? "capacity changes" : `${FILTERS.find((f) => f.id === filter)?.label.toLowerCase()}`} in this
+          period{focus ? ` for ${focus}` : " for the selected metros"}. Try a wider date range{focus ? ", clear the metro focus," : ""} or
+          more metros.
         </div>
       ) : null}
 
       <div className="rd-footnote">
-        Each cell is the change in a network's reported port capacity at one exchange between the two snapshots.
-        <b> Migrations</b> (amber) are networks whose total is roughly flat but who moved capacity between exchanges —
-        often a network shifting ports onto, or off, a given IX. Click any exchange header for its full profile.
-        PeeringDB is self-reported, so read a change as a change in the listed record, not certain live traffic.
+        The heatmap up top is the where/when — click a cell to focus that metro and set the period; the matrix below is the
+        who/what for that window. Each cell is the change in a network's reported port capacity at one exchange.
+        <b> Migrations</b> (amber) are networks whose total is roughly flat but who moved capacity between exchanges. Click an
+        exchange header for its profile. PeeringDB is self-reported, so read a change as a change in the listed record.
       </div>
       {tipNode}
     </>
