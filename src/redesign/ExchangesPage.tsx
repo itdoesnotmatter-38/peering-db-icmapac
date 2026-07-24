@@ -8,8 +8,10 @@ import { ExchangeRank, IxContributor, exchangeMovers, exchangesRanking, fmtMonth
    trajectory, capacity, MoM capacity change, MoM member change, and
    share of its own metro. Columns sort on click; multi-term search. */
 
-type SortKey = "cap" | "delta" | "deltaq" | "dnets" | "share" | "nets";
-const GRID = "26px minmax(190px,1fr) 58px 58px 74px 72px 72px 78px 72px 52px";
+type SortKey = "cap" | "delta" | "deltaq" | "dnets" | "share" | "dshare" | "nets";
+const GRID = "26px minmax(180px,1fr) 54px 54px 70px 68px 68px 74px 66px 72px 48px";
+// signed percentage-point change for the Δ share column
+const ppLbl = (v: number) => (Math.abs(v) < 0.05 ? "·" : `${v > 0 ? "+" : "−"}${Math.abs(v).toFixed(1)}pp`);
 
 const capLbl = (t: number) => (t >= 0.05 ? `${t.toFixed(1)}T` : t > 0 ? `${(t * 1000).toFixed(0)}G` : "—");
 const dLbl = (t: number) =>
@@ -113,6 +115,8 @@ export default function ExchangesPage() {
         ? x.dNets
         : sort.key === "share"
         ? x.metroSharePct
+        : sort.key === "dshare"
+        ? x.dSharePP
         : x.nets;
     return [...base].sort((a, b) => (sort.asc ? val(a) - val(b) : val(b) - val(a)));
   }, [all, q, sort]);
@@ -161,6 +165,9 @@ export default function ExchangesPage() {
             <Head k="share" label="Metro share" />
           </span>
           <span className="c">
+            <Head k="dshare" label="Δ share" />
+          </span>
+          <span className="c">
             <Head k="nets" label="Nets" />
           </span>
         </div>
@@ -195,6 +202,12 @@ export default function ExchangesPage() {
               <span className="pv rd-num movable" {...bind(shareTip(x, metroByMetro.get(x.metro) || []))}>
                 {x.metroSharePct.toFixed(0)}%
               </span>
+              <span
+                className={`pv rd-num movable ${x.dSharePP > 0.05 ? "rd-up" : x.dSharePP < -0.05 ? "rd-down" : "rd-flat"}`}
+                title={`Metro-share change · MoM ${ppLbl(x.dSharePP)} · QoQ ${ppLbl(x.dShareQPP)}`}
+              >
+                {ppLbl(x.dSharePP)}
+              </span>
               <span className="meta rd-num">{x.nets}</span>
             </div>
           </Link>
@@ -204,7 +217,8 @@ export default function ExchangesPage() {
       <div className="rd-footnote">
         Click a column to sort; click again to flip. Hover Δ MoM or Δ QoQ to see which networks moved the needle. “Δ
         members” is the competitor early-warning column — an exchange gaining networks month over month is ramping. Metro
-        share is the exchange's slice of its own market's IX capacity.
+        share is the exchange's slice of its own market's IX capacity; <b>Δ share</b> is how that slice moved in percentage
+        points (month-over-month; hover for the quarter) — positive means it's taking share from metro rivals.
       </div>
       {tipNode}
     </>

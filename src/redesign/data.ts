@@ -1000,6 +1000,10 @@ export interface ExchangeRank {
   dNets: number;
   /** share of its own metro's IX capacity */
   metroSharePct: number;
+  /** metro-share change in percentage points, month-over-month */
+  dSharePP: number;
+  /** metro-share change in percentage points, quarter-over-quarter */
+  dShareQPP: number;
   /** capacity per snapshot, for row sparklines */
   spark: number[];
   /** metro-share % per snapshot, for the share sparkline */
@@ -1054,24 +1058,29 @@ export function exchangesRanking(fd: TrendsResponse, latest: string): ExchangeRa
   });
 
   return Array.from(agg.entries())
-    .map(([ixId, e]) => ({
-      ixId,
-      name: e.name,
-      metro: e.metro,
-      isEquinix: e.isEquinix,
-      capT: e.perSnap[li],
-      nets: e.nets,
-      pctOfScope: total ? (e.perSnap[li] / total) * 100 : 0,
-      dCapT: li > 0 ? e.perSnap[li] - e.perSnap[li - 1] : 0,
-      dCapQ: li >= 3 ? e.perSnap[li] - e.perSnap[li - 3] : li > 0 ? e.perSnap[li] - e.perSnap[0] : 0,
-      dNets: li > 0 ? e.nets - e.netsPrev : 0,
-      metroSharePct: (metroTotal.get(e.metro) || 0) > 0 ? (e.perSnap[li] / (metroTotal.get(e.metro) || 1)) * 100 : 0,
-      spark: e.perSnap,
-      shareSpark: (() => {
-        const tot = metroTotalPerSnap.get(e.metro);
-        return e.perSnap.map((c, i) => (tot && tot[i] > 0 ? (c / tot[i]) * 100 : 0));
-      })(),
-    }))
+    .map(([ixId, e]) => {
+      const tot = metroTotalPerSnap.get(e.metro);
+      const shareSpark = e.perSnap.map((c, i) => (tot && tot[i] > 0 ? (c / tot[i]) * 100 : 0));
+      const qi = li >= 3 ? li - 3 : 0;
+      return {
+        ixId,
+        name: e.name,
+        metro: e.metro,
+        isEquinix: e.isEquinix,
+        capT: e.perSnap[li],
+        nets: e.nets,
+        pctOfScope: total ? (e.perSnap[li] / total) * 100 : 0,
+        dCapT: li > 0 ? e.perSnap[li] - e.perSnap[li - 1] : 0,
+        dCapQ: li >= 3 ? e.perSnap[li] - e.perSnap[li - 3] : li > 0 ? e.perSnap[li] - e.perSnap[0] : 0,
+        dNets: li > 0 ? e.nets - e.netsPrev : 0,
+        metroSharePct: (metroTotal.get(e.metro) || 0) > 0 ? (e.perSnap[li] / (metroTotal.get(e.metro) || 1)) * 100 : 0,
+        // metro-share change in percentage points — the market-share momentum
+        dSharePP: li > 0 ? shareSpark[li] - shareSpark[li - 1] : 0,
+        dShareQPP: li > 0 ? shareSpark[li] - shareSpark[qi] : 0,
+        spark: e.perSnap,
+        shareSpark,
+      };
+    })
     .filter((e) => e.capT > 0 || e.nets > 0)
     .sort((a, b) => b.capT - a.capT);
 }
