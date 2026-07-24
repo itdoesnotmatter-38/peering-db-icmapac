@@ -3,7 +3,7 @@ import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import { fetchPeeringDb } from "../peeringdbApi";
 import { useSnapshot } from "./Shell";
 import { Bar, Kpi, Panel, useTooltip } from "./bits";
-import { METRO_CODES, NetworkPort, facilityMeta, fmtMonth, loadWatchlist, networkProfile, saveWatchlist } from "./data";
+import { METRO_CODES, NetworkPort, facilitiesRanking, facilityMeta, fmtMonth, loadWatchlist, networkProfile, saveWatchlist } from "./data";
 
 /* Network deep dive. The allocation & presence section renders ONE block
    per scoped metro — stacked bar of that metro's IX allocation plus its
@@ -13,6 +13,8 @@ import { METRO_CODES, NetworkPort, facilityMeta, fmtMonth, loadWatchlist, networ
 // categorical palette for stacked-bar segments (reads on light and dark)
 const SEG = ["#2BB0C4", "#4F86D6", "#3FB27F", "#E0A73C", "#D8617D", "#7C8AA0"];
 const segColor = (port: NetworkPort, i: number) => (port.isEquinix ? "var(--equinix)" : SEG[i % SEG.length]);
+// data-centre presence table: name · operator · metro · networks on site · rank
+const FAC_GRID = "minmax(220px,1fr) 150px 130px 116px 108px";
 const gLabel = (g: number) => (g >= 1000 ? `${(g / 1000).toFixed(1)}T` : `${g.toFixed(0)}G`);
 
 interface FacRow {
@@ -26,7 +28,7 @@ interface FacRow {
 }
 
 export default function NetworkPage() {
-  const { data, scope, scopeName, asOf } = useSnapshot();
+  const { data, derived, scope, scopeName, asOf } = useSnapshot();
   const { asn } = useParams();
   const { search } = useLocation();
   const navigate = useNavigate();
@@ -34,6 +36,21 @@ export default function NetworkPage() {
 
   const p = useMemo(() => networkProfile(data, Number(asn), asOf), [data, asn, asOf]);
   const facMeta = useMemo(() => facilityMeta(data), [data]);
+  // per-facility market context: how many networks sit there, and its rank in its metro
+  const facStats = useMemo(() => {
+    const byMetro = new Map<string, Array<{ facilityId: number; networkCount: number }>>();
+    for (const f of facilitiesRanking(data, derived.latest)) {
+      const a = byMetro.get(f.metro);
+      if (a) a.push(f);
+      else byMetro.set(f.metro, [f]);
+    }
+    const m = new Map<number, { networkCount: number; rank: number; metroCount: number }>();
+    byMetro.forEach((list) => {
+      const sorted = [...list].sort((a, b) => b.networkCount - a.networkCount);
+      sorted.forEach((f, i) => m.set(f.facilityId, { networkCount: f.networkCount, rank: i + 1, metroCount: sorted.length }));
+    });
+    return m;
+  }, [data, derived.latest]);
   const [watched, setWatched] = useState<boolean>(() => loadWatchlist().includes(Number(asn)));
 
   // footprint honours the global scope; fall back to full footprint if the
@@ -157,6 +174,17 @@ export default function NetworkPage() {
   const scopedFacRows = facs.rows.filter((x) => x.metro && visibleFootprint.some((f) => f.metro === x.metro));
   const eqxDcCount = scopedFacRows.filter((x) => x.isEquinix).length;
   const compDcCount = scopedFacRows.length - eqxDcCount;
+  // table order: scoped-metro order, Equinix first within a metro, then busiest site
+  const metroOrder = new Map(visibleFootprint.map((f, i) => [f.metro, i]));
+  const facTable = [...scopedFacRows].sort(
+    (a, b) =>
+      (metroOrder.get(a.metro || "") ?? 99) - (metroOrder.get(b.metro || "") ?? 99) ||
+      Number(b.isEquinix) - Number(a.isEquinix) ||
+      (facStats.get(b.facId)?.networkCount || 0) - (facStats.get(a.facId)?.networkCount || 0)
+  );
+  const metrosWithoutDc = visibleFootprint
+    .filter((f) => !scopedFacRows.some((x) => x.metro === f.metro))
+    .map((f) => f.metro);
 
   const compareTo = (() => {
     const n = new URLSearchParams(search);
@@ -266,26 +294,14 @@ export default function NetworkPage() {
       </div>
 
       <div className="rd-sec-head">
-        <h2>Allocation &amp; presence — {scopeName}</h2>
+        <h2>Exchange allocation — {scopeName}</h2>
         <span className="note rd-num">
           {blocks.length} metro{blocks.length === 1 ? "" : "s"} ·{" "}
           {totalScopedG >= 1000 ? `${(totalScopedG / 1000).toFixed(1)} Tbps` : `${totalScopedG.toFixed(0)} Gbps`} deployed
-          {facs.loading ? " · fetching facilities…" : scopedFacRows.length ? (
-            <>
-              {" · "}
-              <span className="rd-dcsplit">
-                {scopedFacRows.length} DC — <b style={{ color: "var(--equinix)" }}>{eqxDcCount} Equinix</b>
-                {compDcCount ? <> · {compDcCount} competitor</> : null}
-              </span>
-            </>
-          ) : null}
         </span>
       </div>
 
       {blocks.map(({ f, totalG, segments }) => {
-        const metroFacs = facs.rows
-          .filter((x) => x.metro === f.metro)
-          .sort((a, b) => Number(b.isEquinix) - Number(a.isEquinix));
         return (
           <div className="rd-metroblock" key={f.metro} id={`mb-${f.metro}`}>
             <div className="rd-mb-head">
@@ -357,49 +373,81 @@ export default function NetworkPage() {
                 No listed exchange ports in {f.metro} — facility-only presence.
               </div>
             )}
-            {metroFacs.length ? (
-              <>
-                <div className="rd-eyebrow rd-faceyebrow">
-                  Data centres · <b style={{ color: "var(--equinix)" }}>{metroFacs.filter((x) => x.isEquinix).length} Equinix</b>
-                  {metroFacs.some((x) => !x.isEquinix) ? ` · ${metroFacs.filter((x) => !x.isEquinix).length} competitor` : ""}
-                </div>
-                <div className="rd-facchips">
-                  {metroFacs.map((x) => (
-                    <Link key={x.facId} to={{ pathname: `/fac/${x.facId}`, search }} className={`rd-facchip${x.isEquinix ? " eqx" : ""}`} title={`${x.name} · ${x.org}`}>
-                      {x.name.length > 34 ? `${x.name.slice(0, 33)}…` : x.name}
-                      {showOperator(x.name, x.org) ? <span className="op"> · {x.org.length > 18 ? `${x.org.slice(0, 17)}…` : x.org}</span> : null}
-                    </Link>
-                  ))}
-                </div>
-              </>
-            ) : !facs.loading && !facs.error ? (
-              <div className="rd-facchips">
-                <span className="rd-facchip" style={{ opacity: 0.7 }}>
-                  no listed facilities
-                </span>
-              </div>
-            ) : null}
           </div>
         );
       })}
 
+      {/* ---- data-centre presence: its own section, as a table ---- */}
+      <div className="rd-sec-head" style={{ marginTop: 26 }}>
+        <h2>Data-centre presence — {scopeName}</h2>
+        <span className="note rd-num">
+          {facs.loading ? (
+            "fetching facilities…"
+          ) : scopedFacRows.length ? (
+            <span className="rd-dcsplit">
+              {scopedFacRows.length} DC — <b style={{ color: "var(--equinix)" }}>{eqxDcCount} Equinix</b>
+              {compDcCount ? <> · {compDcCount} competitor</> : null}
+            </span>
+          ) : (
+            "no listed data centres in scope"
+          )}
+        </span>
+      </div>
+      <Panel title={`Where ${p.name} is racked`} tag={fmtMonth(latest)}>
+        <div className="rd-dirhead" style={{ gridTemplateColumns: FAC_GRID }}>
+          <span>Data centre</span>
+          <span>Operator</span>
+          <span>Metro</span>
+          <span className="c">Networks on site</span>
+          <span className="c">Rank in metro</span>
+        </div>
+        {facs.loading ? (
+          <div style={{ padding: "16px 12px", color: "var(--muted)", fontSize: 13 }}>Loading data-centre presence from PeeringDB…</div>
+        ) : facs.error ? (
+          <div style={{ padding: "16px 12px", color: "var(--gap)", fontSize: 13 }}>Couldn't load facilities: {facs.error}</div>
+        ) : facTable.length ? (
+          facTable.map((x) => {
+            const st = facStats.get(x.facId);
+            return (
+              <Link key={x.facId} to={{ pathname: `/fac/${x.facId}`, search }} className="rd-rowlink">
+                <div className={`rd-dirrow facts${x.isEquinix ? " eqxrow" : ""}`} style={{ gridTemplateColumns: FAC_GRID }}>
+                  <span className="nm" style={x.isEquinix ? { color: "var(--equinix)" } : undefined} title={x.name}>
+                    {x.name.length > 34 ? `${x.name.slice(0, 33)}…` : x.name}
+                  </span>
+                  <span className="meta" title={x.org}>
+                    {x.isEquinix ? "Equinix" : x.org.length > 20 ? `${x.org.slice(0, 19)}…` : x.org}
+                  </span>
+                  <span className="meta">
+                    {x.metro} <span className="rd-cc">{METRO_CODES[x.metro || ""] || ""}</span>
+                  </span>
+                  <span className="pv rd-num">{st ? st.networkCount.toLocaleString() : "—"}</span>
+                  <span className="meta rd-num">{st ? `#${st.rank} of ${st.metroCount}` : "—"}</span>
+                </div>
+              </Link>
+            );
+          })
+        ) : (
+          <div style={{ padding: "16px 12px", color: "var(--muted)", fontSize: 13 }}>
+            {p.name} lists no data centres in {scopeName}.
+          </div>
+        )}
+        {!facs.loading && metrosWithoutDc.length ? (
+          <div style={{ padding: "10px 12px", color: "var(--faint)", fontSize: 12 }}>
+            No listed data centres in {metrosWithoutDc.join(", ")} — exchange-only presence there.
+          </div>
+        ) : null}
+      </Panel>
+
       <div className="rd-footnote">
-        Snapshot-based ({fmtMonth(latest)}) for capacity and metros; facility presence is fetched live from PeeringDB.
-        Every scoped metro renders at once — change the metro scope above and both the allocation and the data-centre
-        presence follow. The Equinix / competitor DC split is the displacement view: competitor DCs in a metro where we
-        also operate are the move-to-Equinix targets. Click an exchange in a legend for its profile, or a metro name for the metro view.
+        Snapshot-based ({fmtMonth(latest)}) for capacity, metros and the data-centre columns; which facilities this
+        network sits in is fetched live from PeeringDB. Every scoped metro renders at once — change the metro scope above
+        and both sections follow. The Equinix / competitor split is the displacement view: competitor DCs in a metro where
+        we also operate are the move-to-Equinix targets, and “networks on site” tells you how strategic each one is. Click
+        a row for the data-centre profile, an exchange in a legend for its profile, or a metro name for the metro view.
       </div>
       {tipNode}
     </>
   );
-}
-
-// show the operator on a competitor DC only when its name doesn't already carry it
-// (strip punctuation so "Equinix, Inc." matches "Equinix …")
-function showOperator(name: string, org: string): boolean {
-  if (!org || org === "—") return false;
-  const first = org.toLowerCase().split(/\s+/)[0].replace(/[^a-z0-9]/g, "");
-  return first.length > 1 && !name.toLowerCase().includes(first);
 }
 
 function portMini(port: NetworkPort, search: string) {
