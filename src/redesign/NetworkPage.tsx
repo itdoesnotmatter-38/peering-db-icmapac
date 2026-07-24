@@ -1,9 +1,19 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
+import { Link, useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { fetchPeeringDb } from "../peeringdbApi";
 import { useSnapshot } from "./Shell";
-import { Bar, Kpi, Panel, useTooltip } from "./bits";
-import { METRO_CODES, NetworkPort, facilitiesRanking, facilityMeta, fmtMonth, loadWatchlist, networkProfile, saveWatchlist } from "./data";
+import { Bar, Kpi, NetworkTypeahead, Panel, useTooltip } from "./bits";
+import {
+  METRO_CODES,
+  NetworkPort,
+  facilitiesRanking,
+  facilityMeta,
+  fmtMonth,
+  loadWatchlist,
+  networkProfile,
+  networksDirectory,
+  saveWatchlist,
+} from "./data";
 
 /* Network deep dive. The allocation & presence section renders ONE block
    per scoped metro — stacked bar of that metro's IX allocation plus its
@@ -13,8 +23,6 @@ import { METRO_CODES, NetworkPort, facilitiesRanking, facilityMeta, fmtMonth, lo
 // categorical palette for stacked-bar segments (reads on light and dark)
 const SEG = ["#2BB0C4", "#4F86D6", "#3FB27F", "#E0A73C", "#D8617D", "#7C8AA0"];
 const segColor = (port: NetworkPort, i: number) => (port.isEquinix ? "var(--equinix)" : SEG[i % SEG.length]);
-// data-centre presence table: name · operator · metro · networks on site · rank
-const FAC_GRID = "minmax(220px,1fr) 150px 130px 116px 108px";
 const gLabel = (g: number) => (g >= 1000 ? `${(g / 1000).toFixed(1)}T` : `${g.toFixed(0)}G`);
 
 interface FacRow {
@@ -59,12 +67,37 @@ export default function NetworkPage() {
   const scopeMismatch = Boolean(scope && scope.length && inScopeFootprint.length === 0);
   const visibleFootprint = inScopeFootprint.length ? inScopeFootprint : p.footprint;
 
-  // live facility membership (netfac) for this network
-  const [facs, setFacs] = useState<{ loading: boolean; rows: FacRow[]; error: string | null }>({
-    loading: false,
-    rows: [],
-    error: null,
-  });
+  /* ---- comparator networks for the data-centre matrix (URL-backed) ---- */
+  const [searchParams, setSearchParams] = useSearchParams();
+  const withAsns = useMemo(
+    () =>
+      (searchParams.get("with") || "")
+        .split(",")
+        .map((s) => Number(s.trim()))
+        .filter((n) => Number.isFinite(n) && n > 0 && n !== Number(asn)),
+    [searchParams, asn]
+  );
+  const compareAsns = useMemo(() => Array.from(new Set([Number(asn), ...withAsns])).slice(0, 8), [asn, withAsns]);
+  const compareProfiles = useMemo(
+    () => compareAsns.map((a) => networkProfile(data, a, asOf)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [data, compareAsns.join(","), asOf]
+  );
+  const setWith = (list: number[]) =>
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        const v = Array.from(new Set(list)).filter((x) => x !== Number(asn) && x > 0).slice(0, 7);
+        if (v.length) next.set("with", v.join(","));
+        else next.delete("with");
+        return next;
+      },
+      { replace: true }
+    );
+  const dir = useMemo(() => networksDirectory(data, derived.latest), [data, derived.latest]);
+
+  // live facility membership (netfac), one entry per compared network
+  const [facMap, setFacMap] = useState<Record<number, { loading: boolean; rows: FacRow[]; error: string | null }>>({});
 
   // live PeeringDB net record — peering policy, traffic band, scope, website
   const [netInfo, setNetInfo] = useState<{ policy?: string; traffic?: string; scope?: string; website?: string } | null>(null);
@@ -91,31 +124,34 @@ export default function NetworkPage() {
   }, [p]);
 
   useEffect(() => {
-    if (!p.found || !p.netId) return;
     let alive = true;
-    setFacs({ loading: true, rows: [], error: null });
-    fetchPeeringDb<any>("netfac", { net_id: p.netId, all: 1 })
-      .then((resp) => {
-        if (!alive) return;
-        const rows: FacRow[] = resp.data.map((r: any) => {
-          const meta = facMeta.get(r.fac_id);
-          return {
-            facId: r.fac_id,
-            name: meta?.name || r.name,
-            org: meta?.org || "—",
-            metro: meta?.metro || null,
-            isEquinix: meta?.isEquinix ?? /equinix/i.test(r.name || ""),
-            city: r.city || "",
-            country: r.country || "",
-          };
-        });
-        setFacs({ loading: false, rows, error: null });
-      })
-      .catch((e) => alive && setFacs({ loading: false, rows: [], error: e?.message || "Fetch failed" }));
+    compareProfiles.forEach((pr) => {
+      if (!pr.found || !pr.netId || facMap[pr.asn]) return;
+      setFacMap((m) => ({ ...m, [pr.asn]: { loading: true, rows: [], error: null } }));
+      fetchPeeringDb<any>("netfac", { net_id: pr.netId, all: 1 })
+        .then((resp) => {
+          if (!alive) return;
+          const rows: FacRow[] = (resp.data || []).map((r: any) => {
+            const meta = facMeta.get(r.fac_id);
+            return {
+              facId: r.fac_id,
+              name: meta?.name || r.name,
+              org: meta?.org || "—",
+              metro: meta?.metro || null,
+              isEquinix: meta?.isEquinix ?? /equinix/i.test(r.name || ""),
+              city: r.city || "",
+              country: r.country || "",
+            };
+          });
+          setFacMap((m) => ({ ...m, [pr.asn]: { loading: false, rows, error: null } }));
+        })
+        .catch((e) => alive && setFacMap((m) => ({ ...m, [pr.asn]: { loading: false, rows: [], error: e?.message || "Fetch failed" } })));
+    });
     return () => {
       alive = false;
     };
-  }, [p, facMeta]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [compareProfiles, facMeta]);
 
   const toggleWatch = () => {
     const list = loadWatchlist();
@@ -170,21 +206,24 @@ export default function NetworkPage() {
   const prev = p.snapshots.length > 1 ? p.snapshots[p.snapshots.length - 2] : latest;
   const maxMetro = visibleFootprint[0]?.capT || 1;
 
-  // facility presence limited to the metros currently in scope — never blended
-  const scopedFacRows = facs.rows.filter((x) => x.metro && visibleFootprint.some((f) => f.metro === x.metro));
+  // this network's own facility presence, limited to the metros in scope
+  const primaryFacs = facMap[p.asn] || { loading: true, rows: [], error: null };
+  const scopedFacRows = primaryFacs.rows.filter((x) => x.metro && visibleFootprint.some((f) => f.metro === x.metro));
   const eqxDcCount = scopedFacRows.filter((x) => x.isEquinix).length;
   const compDcCount = scopedFacRows.length - eqxDcCount;
-  // table order: scoped-metro order, Equinix first within a metro, then busiest site
-  const metroOrder = new Map(visibleFootprint.map((f, i) => [f.metro, i]));
-  const facTable = [...scopedFacRows].sort(
-    (a, b) =>
-      (metroOrder.get(a.metro || "") ?? 99) - (metroOrder.get(b.metro || "") ?? 99) ||
-      Number(b.isEquinix) - Number(a.isEquinix) ||
-      (facStats.get(b.facId)?.networkCount || 0) - (facStats.get(a.facId)?.networkCount || 0)
-  );
-  const metrosWithoutDc = visibleFootprint
-    .filter((f) => !scopedFacRows.some((x) => x.metro === f.metro))
-    .map((f) => f.metro);
+
+  // matrix helpers: is a network in a facility, and which DCs to show per metro
+  const isIn = (a: number, facId: number) => (facMap[a]?.rows || []).some((x) => x.facId === facId);
+  const anyLoading = compareProfiles.some((pr) => pr.found && pr.netId && (!facMap[pr.asn] || facMap[pr.asn]?.loading));
+  const colsForMetro = (metro: string) => {
+    const seen = new Map<number, FacRow>();
+    compareProfiles.forEach((pr) => (facMap[pr.asn]?.rows || []).forEach((x) => x.metro === metro && seen.set(x.facId, x)));
+    return Array.from(seen.values()).sort(
+      (a, b) =>
+        Number(b.isEquinix) - Number(a.isEquinix) ||
+        (facStats.get(b.facId)?.networkCount || 0) - (facStats.get(a.facId)?.networkCount || 0)
+    );
+  };
 
   const compareTo = (() => {
     const n = new URLSearchParams(search);
@@ -377,15 +416,15 @@ export default function NetworkPage() {
         );
       })}
 
-      {/* ---- data-centre presence: its own section, as a table ---- */}
+      {/* ---- data-centre presence: its own section, as a facilities × networks matrix ---- */}
       <div className="rd-sec-head" style={{ marginTop: 26 }}>
         <h2>Data-centre presence — {scopeName}</h2>
         <span className="note rd-num">
-          {facs.loading ? (
+          {primaryFacs.loading ? (
             "fetching facilities…"
           ) : scopedFacRows.length ? (
             <span className="rd-dcsplit">
-              {scopedFacRows.length} DC — <b style={{ color: "var(--equinix)" }}>{eqxDcCount} Equinix</b>
+              {p.name}: {scopedFacRows.length} DC — <b style={{ color: "var(--equinix)" }}>{eqxDcCount} Equinix</b>
               {compDcCount ? <> · {compDcCount} competitor</> : null}
             </span>
           ) : (
@@ -393,57 +432,124 @@ export default function NetworkPage() {
           )}
         </span>
       </div>
-      <Panel title={`Where ${p.name} is racked`} tag={fmtMonth(latest)}>
-        <div className="rd-dirhead" style={{ gridTemplateColumns: FAC_GRID }}>
-          <span>Data centre</span>
-          <span>Operator</span>
-          <span>Metro</span>
-          <span className="c">Networks on site</span>
-          <span className="c">Rank in metro</span>
+
+      {/* comparator picker */}
+      <div className="rd-slider-bar" style={{ alignItems: "flex-start", gap: 14 }}>
+        <div style={{ minWidth: 260, flex: 1, maxWidth: 420 }}>
+          <NetworkTypeahead
+            options={dir}
+            onPick={(a) => setWith([...withAsns, a])}
+            onPickMany={(list) => setWith([...withAsns, ...list])}
+            exclude={new Set(compareAsns)}
+            placeholder="Compare presence with — names or ASNs…"
+          />
+          {withAsns.length ? (
+            <div className="rd-chips" style={{ marginTop: 8, marginBottom: 0 }}>
+              {withAsns.map((a) => {
+                const nm = compareProfiles.find((x) => x.asn === a)?.name || `AS${a}`;
+                return (
+                  <button key={a} className="rd-chip on" onClick={() => setWith(withAsns.filter((x) => x !== a))} title="Remove">
+                    {nm.length > 18 ? `${nm.slice(0, 17)}…` : nm} ✕
+                  </button>
+                );
+              })}
+              <button className="rd-chip" onClick={() => setWith([])}>
+                clear ✕
+              </button>
+            </div>
+          ) : null}
         </div>
-        {facs.loading ? (
-          <div style={{ padding: "16px 12px", color: "var(--muted)", fontSize: 13 }}>Loading data-centre presence from PeeringDB…</div>
-        ) : facs.error ? (
-          <div style={{ padding: "16px 12px", color: "var(--gap)", fontSize: 13 }}>Couldn't load facilities: {facs.error}</div>
-        ) : facTable.length ? (
-          facTable.map((x) => {
-            const st = facStats.get(x.facId);
-            return (
-              <Link key={x.facId} to={{ pathname: `/fac/${x.facId}`, search }} className="rd-rowlink">
-                <div className={`rd-dirrow facts${x.isEquinix ? " eqxrow" : ""}`} style={{ gridTemplateColumns: FAC_GRID }}>
-                  <span className="nm" style={x.isEquinix ? { color: "var(--equinix)" } : undefined} title={x.name}>
-                    {x.name.length > 34 ? `${x.name.slice(0, 33)}…` : x.name}
-                  </span>
-                  <span className="meta" title={x.org}>
-                    {x.isEquinix ? "Equinix" : x.org.length > 20 ? `${x.org.slice(0, 19)}…` : x.org}
-                  </span>
-                  <span className="meta">
-                    {x.metro} <span className="rd-cc">{METRO_CODES[x.metro || ""] || ""}</span>
-                  </span>
-                  <span className="pv rd-num">{st ? st.networkCount.toLocaleString() : "—"}</span>
-                  <span className="meta rd-num">{st ? `#${st.rank} of ${st.metroCount}` : "—"}</span>
-                </div>
+        <div className="rd-grow" />
+        <span className="note rd-num">
+          {compareAsns.length} network{compareAsns.length === 1 ? "" : "s"} compared · columns = data centres in that metro
+        </span>
+      </div>
+
+      {visibleFootprint.map((f) => {
+        const cols = colsForMetro(f.metro);
+        return (
+          <div className="rd-metroblock" key={`dc-${f.metro}`}>
+            <div className="rd-mb-head">
+              <Link className="name" to={{ pathname: `/metro/${encodeURIComponent(f.metro)}`, search }}>
+                {f.metro}
               </Link>
-            );
-          })
-        ) : (
-          <div style={{ padding: "16px 12px", color: "var(--muted)", fontSize: 13 }}>
-            {p.name} lists no data centres in {scopeName}.
+              <span className="rd-cc">{METRO_CODES[f.metro] || f.country || ""}</span>
+              {!anyLoading && !cols.length ? (
+                <span className="rd-mb-note">no listed data centres here for these networks</span>
+              ) : null}
+            </div>
+            <div style={{ overflowX: "auto" }}>
+              <table className="rd-amx compact">
+                <thead>
+                  <tr>
+                    <th className="who" />
+                    {cols.length ? (
+                      cols.map((c) => {
+                        const st = facStats.get(c.facId);
+                        return (
+                          <th key={c.facId} className={`fac${c.isEquinix ? " eqx" : ""}`} title={`${c.name} · ${c.org}`}>
+                            <Link to={{ pathname: `/fac/${c.facId}`, search }}>{c.name}</Link>
+                            <span className="mx">
+                              {c.isEquinix ? "Equinix" : c.org.length > 16 ? `${c.org.slice(0, 15)}…` : c.org}
+                              {st ? ` · ${st.networkCount} · #${st.rank}` : ""}
+                            </span>
+                          </th>
+                        );
+                      })
+                    ) : (
+                      <th className="fac" />
+                    )}
+                  </tr>
+                </thead>
+                <tbody>
+                  {compareProfiles.map((pr) => {
+                    const loading = pr.found && pr.netId && (!facMap[pr.asn] || facMap[pr.asn]?.loading);
+                    const here = cols.some((c) => isIn(pr.asn, c.facId));
+                    return (
+                      <tr key={pr.asn}>
+                        <td className="who">
+                          <Link to={{ pathname: `/net/${pr.asn}`, search }} className="nm rd-netlink">
+                            {pr.name.length > 20 ? `${pr.name.slice(0, 19)}…` : pr.name}
+                          </Link>
+                          <span className="sub rd-num">AS{pr.asn}</span>
+                        </td>
+                        {loading ? (
+                          (cols.length ? cols : [null]).map((c, i) => (
+                            <td key={c ? c.facId : i} className="cell dot">
+                              …
+                            </td>
+                          ))
+                        ) : !cols.length || !here ? (
+                          <td className="cell facnote" colSpan={cols.length || 1}>
+                            not present in this metro
+                          </td>
+                        ) : (
+                          cols.map((c) => {
+                            const on = isIn(pr.asn, c.facId);
+                            return (
+                              <td key={c.facId} className={`cell dot${on ? (c.isEquinix ? " on eqx" : " on") : ""}`}>
+                                {on ? "✓" : "·"}
+                              </td>
+                            );
+                          })
+                        )}
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
           </div>
-        )}
-        {!facs.loading && metrosWithoutDc.length ? (
-          <div style={{ padding: "10px 12px", color: "var(--faint)", fontSize: 12 }}>
-            No listed data centres in {metrosWithoutDc.join(", ")} — exchange-only presence there.
-          </div>
-        ) : null}
-      </Panel>
+        );
+      })}
 
       <div className="rd-footnote">
-        Snapshot-based ({fmtMonth(latest)}) for capacity, metros and the data-centre columns; which facilities this
-        network sits in is fetched live from PeeringDB. Every scoped metro renders at once — change the metro scope above
-        and both sections follow. The Equinix / competitor split is the displacement view: competitor DCs in a metro where
-        we also operate are the move-to-Equinix targets, and “networks on site” tells you how strategic each one is. Click
-        a row for the data-centre profile, an exchange in a legend for its profile, or a metro name for the metro view.
+        Snapshot-based ({fmtMonth(latest)}) for capacity and metros; which data centres each network sits in is fetched
+        live from PeeringDB. Columns are the data centres in that metro where at least one compared network is present —
+        Equinix violet, with operator, networks on site and metro rank under the name; rows are the networks. Add
+        comparators above to line several networks up in the same facilities, and the selection lives in the URL so the
+        comparison is shareable. Click a column header for the data-centre profile, an exchange in a legend for its
+        profile, or a metro name for the metro view.
       </div>
       {tipNode}
     </>
