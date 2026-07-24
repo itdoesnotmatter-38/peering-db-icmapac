@@ -212,6 +212,25 @@ export default function NetworkPage() {
   const eqxDcCount = scopedFacRows.filter((x) => x.isEquinix).length;
   const compDcCount = scopedFacRows.length - eqxDcCount;
 
+  // comparing more than just this network? both sections switch to matrix form
+  const multi = compareAsns.length > 1;
+  // exchanges in a metro where at least one compared network has a port
+  const ixColsForMetro = (metro: string) => {
+    const agg = new Map<number, { ixId: number; name: string; eqx: boolean; total: number }>();
+    compareProfiles.forEach((pr) =>
+      pr.ports
+        .filter((x) => x.metro === metro)
+        .forEach((x) => {
+          const e = agg.get(x.ixId) || { ixId: x.ixId, name: x.ixName, eqx: x.isEquinix, total: 0 };
+          e.total += x.capG;
+          agg.set(x.ixId, e);
+        })
+    );
+    return Array.from(agg.values())
+      .sort((a, b) => (a.eqx !== b.eqx ? (a.eqx ? -1 : 1) : b.total - a.total))
+      .slice(0, 8);
+  };
+
   // matrix helpers: is a network in a facility, and which DCs to show per metro
   const isIn = (a: number, facId: number) => (facMap[a]?.rows || []).some((x) => x.facId === facId);
   const anyLoading = compareProfiles.some((pr) => pr.found && pr.netId && (!facMap[pr.asn] || facMap[pr.asn]?.loading));
@@ -332,15 +351,131 @@ export default function NetworkPage() {
         </div>
       </div>
 
-      <div className="rd-sec-head">
-        <h2>Exchange allocation — {scopeName}</h2>
+      {/* comparator picker — drives BOTH the exchange and data-centre sections */}
+      <div className="rd-slider-bar" style={{ alignItems: "flex-start", gap: 14 }}>
+        <div style={{ minWidth: 260, flex: 1, maxWidth: 420 }}>
+          <NetworkTypeahead
+            options={dir}
+            onPick={(a) => setWith([...withAsns, a])}
+            onPickMany={(list) => setWith([...withAsns, ...list])}
+            exclude={new Set(compareAsns)}
+            placeholder="Compare with — names or ASNs…"
+          />
+          {withAsns.length ? (
+            <div className="rd-chips" style={{ marginTop: 8, marginBottom: 0 }}>
+              {withAsns.map((a) => {
+                const nm = compareProfiles.find((x) => x.asn === a)?.name || `AS${a}`;
+                return (
+                  <button key={a} className="rd-chip on" onClick={() => setWith(withAsns.filter((x) => x !== a))} title="Remove">
+                    {nm.length > 18 ? `${nm.slice(0, 17)}…` : nm} ✕
+                  </button>
+                );
+              })}
+              <button className="rd-chip" onClick={() => setWith([])}>
+                clear ✕
+              </button>
+            </div>
+          ) : null}
+        </div>
+        <div className="rd-grow" />
         <span className="note rd-num">
-          {blocks.length} metro{blocks.length === 1 ? "" : "s"} ·{" "}
-          {totalScopedG >= 1000 ? `${(totalScopedG / 1000).toFixed(1)} Tbps` : `${totalScopedG.toFixed(0)} Gbps`} deployed
+          {compareAsns.length === 1
+            ? `${p.name} only — add networks to compare exchanges and data centres side by side`
+            : `${compareAsns.length} networks compared · exchanges and data centres below`}
         </span>
       </div>
 
-      {blocks.map(({ f, totalG, segments }) => {
+      <div className="rd-sec-head">
+        <h2>Exchange allocation — {scopeName}</h2>
+        <span className="note rd-num">
+          {multi
+            ? `${visibleFootprint.length} metro${visibleFootprint.length === 1 ? "" : "s"} · cell = port capacity · share of that network's metro total`
+            : `${blocks.length} metro${blocks.length === 1 ? "" : "s"} · ${
+                totalScopedG >= 1000 ? `${(totalScopedG / 1000).toFixed(1)} Tbps` : `${totalScopedG.toFixed(0)} Gbps`
+              } deployed`}
+        </span>
+      </div>
+
+      {/* multi-network: exchanges × networks matrix, mirroring the DC section */}
+      {multi
+        ? visibleFootprint.map((f) => {
+            const cols = ixColsForMetro(f.metro);
+            return (
+              <div className="rd-metroblock" key={`ix-${f.metro}`}>
+                <div className="rd-mb-head">
+                  <Link className="name" to={{ pathname: `/metro/${encodeURIComponent(f.metro)}`, search }}>
+                    {f.metro}
+                  </Link>
+                  <span className="rd-cc">{METRO_CODES[f.metro] || f.country || ""}</span>
+                  {!cols.length ? <span className="rd-mb-note">no listed exchange ports here for these networks</span> : null}
+                </div>
+                <div style={{ overflowX: "auto" }}>
+                  <table className="rd-amx compact">
+                    <thead>
+                      <tr>
+                        <th className="who" />
+                        {cols.length ? (
+                          cols.map((c) => (
+                            <th key={c.ixId} className={c.eqx ? "eqx" : ""}>
+                              <Link to={{ pathname: `/exchange/${c.ixId}`, search }}>{c.name}</Link>
+                            </th>
+                          ))
+                        ) : (
+                          <th />
+                        )}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {compareProfiles.map((pr) => {
+                        const mine = pr.ports.filter((x) => x.metro === f.metro);
+                        const rowTotalG = mine.reduce((a, x) => a + x.capG, 0);
+                        return (
+                          <tr key={pr.asn}>
+                            <td className="who">
+                              <Link to={{ pathname: `/net/${pr.asn}`, search }} className="nm rd-netlink">
+                                {pr.name.length > 20 ? `${pr.name.slice(0, 19)}…` : pr.name}
+                              </Link>
+                              <span className="sub rd-num">AS{pr.asn}</span>
+                            </td>
+                            {!cols.length || !rowTotalG ? (
+                              <td className="cell facnote" colSpan={cols.length || 1}>
+                                not present in this metro
+                              </td>
+                            ) : (
+                              cols.map((c) => {
+                                const g = mine.find((x) => x.ixId === c.ixId)?.capG || 0;
+                                const pct = g > 0 ? (g / rowTotalG) * 100 : 0;
+                                return (
+                                  <td
+                                    key={c.ixId}
+                                    className={`cell rd-num${c.eqx ? " eqxcol" : ""}`}
+                                    style={
+                                      g
+                                        ? {
+                                            background: `color-mix(in srgb, ${c.eqx ? "var(--equinix)" : "var(--accent)"} ${Math.round(
+                                              8 + Math.sqrt(g / Math.max(c.total, 1)) * 34
+                                            )}%, var(--surface))`,
+                                          }
+                                        : undefined
+                                    }
+                                    title={g ? `${gLabel(g)} — ${pct.toFixed(0)}% of ${pr.name}'s ${f.metro} IX capacity` : undefined}
+                                  >
+                                    {g ? gLabel(g) : "—"}
+                                    {g > 0 ? <span className="d shpct">{pct >= 0.5 ? `${pct.toFixed(0)}%` : "<1%"}</span> : null}
+                                  </td>
+                                );
+                              })
+                            )}
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            );
+          })
+        : blocks.map(({ f, totalG, segments }) => {
         return (
           <div className="rd-metroblock" key={f.metro} id={`mb-${f.metro}`}>
             <div className="rd-mb-head">
@@ -430,38 +565,6 @@ export default function NetworkPage() {
           ) : (
             "no listed data centres in scope"
           )}
-        </span>
-      </div>
-
-      {/* comparator picker */}
-      <div className="rd-slider-bar" style={{ alignItems: "flex-start", gap: 14 }}>
-        <div style={{ minWidth: 260, flex: 1, maxWidth: 420 }}>
-          <NetworkTypeahead
-            options={dir}
-            onPick={(a) => setWith([...withAsns, a])}
-            onPickMany={(list) => setWith([...withAsns, ...list])}
-            exclude={new Set(compareAsns)}
-            placeholder="Compare presence with — names or ASNs…"
-          />
-          {withAsns.length ? (
-            <div className="rd-chips" style={{ marginTop: 8, marginBottom: 0 }}>
-              {withAsns.map((a) => {
-                const nm = compareProfiles.find((x) => x.asn === a)?.name || `AS${a}`;
-                return (
-                  <button key={a} className="rd-chip on" onClick={() => setWith(withAsns.filter((x) => x !== a))} title="Remove">
-                    {nm.length > 18 ? `${nm.slice(0, 17)}…` : nm} ✕
-                  </button>
-                );
-              })}
-              <button className="rd-chip" onClick={() => setWith([])}>
-                clear ✕
-              </button>
-            </div>
-          ) : null}
-        </div>
-        <div className="rd-grow" />
-        <span className="note rd-num">
-          {compareAsns.length} network{compareAsns.length === 1 ? "" : "s"} compared · columns = data centres in that metro
         </span>
       </div>
 
