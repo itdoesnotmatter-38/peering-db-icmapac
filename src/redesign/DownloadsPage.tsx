@@ -64,6 +64,7 @@ export default function DownloadsPage() {
   const [view, setView] = useState("ix");
   const [busy, setBusy] = useState<string | null>(null);
   const [exportErr, setExportErr] = useState<string | null>(null);
+  const [exportWarn, setExportWarn] = useState<string | null>(null);
 
   useEffect(() => {
     let alive = true;
@@ -87,9 +88,16 @@ export default function DownloadsPage() {
   }, [scopeKind, options, code]);
 
   const allDates = useMemo(() => (runs || []).map((r) => r.snapshotDate), [runs]);
-  const toggleDate = (d: string) =>
+  /* market exports need a snapshot manifest — older runs without one can't
+     build a country/region CSV, so they're offered but not selectable */
+  const runByDate = useMemo(() => new Map((runs || []).map((r) => [r.snapshotDate, r])), [runs]);
+  const canExport = (d: string) => Boolean(runByDate.get(d)?.manifestUrl);
+  const exportableDates = useMemo(() => allDates.filter(canExport), [allDates, runByDate]); // eslint-disable-line react-hooks/exhaustive-deps
+  const toggleDate = (d: string) => {
+    if (!canExport(d)) return;
     setSelected((s) => (s.includes(d) ? s.filter((x) => x !== d) : [...allDates.filter((x) => s.includes(x) || x === d)]));
-  const chrono = useMemo(() => [...selected].sort(), [selected]);
+  };
+  const chrono = useMemo(() => [...selected].filter(canExport).sort(), [selected, runByDate]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /* one combined CSV across the selected months. The market exports already
      carry snapshot_date as their first column, so months concatenate cleanly
@@ -97,22 +105,43 @@ export default function DownloadsPage() {
   const downloadCombined = async () => {
     if (!chrono.length || busy) return;
     setExportErr(null);
+    setExportWarn(null);
     const out: string[] = [];
+    const done: string[] = [];
+    const skipped: string[] = [];
     try {
       for (let i = 0; i < chrono.length; i++) {
         const d = chrono[i];
         setBusy(`Building… ${i + 1}/${chrono.length}`);
-        const r = await fetch(marketUrl(d, scopeKind, code, view));
-        if (!r.ok) throw new Error(`${d}: HTTP ${r.status}`);
-        const text = await r.text();
-        const lines = text.split(/\r?\n/).filter((l) => l.length);
-        if (!lines.length) continue;
+        let lines: string[] = [];
+        try {
+          const r = await fetch(marketUrl(d, scopeKind, code, view));
+          // a month the builder can't produce shouldn't kill the whole export
+          if (!r.ok) {
+            skipped.push(d);
+            continue;
+          }
+          lines = (await r.text()).split(/\r?\n/).filter((l) => l.length);
+        } catch {
+          skipped.push(d);
+          continue;
+        }
+        if (lines.length < 2) {
+          skipped.push(d);
+          continue;
+        }
         const hasDateCol = lines[0].toLowerCase().startsWith("snapshot_date");
         if (out.length === 0) out.push(hasDateCol ? lines[0] : `snapshot_date,${lines[0]}`);
         for (let j = 1; j < lines.length; j++) out.push(hasDateCol ? lines[j] : `${d},${lines[j]}`);
+        done.push(d);
       }
-      const span = chrono.length > 1 ? `${chrono[0]}_to_${chrono[chrono.length - 1]}` : chrono[0];
+      if (!done.length) {
+        setExportErr(`No export available for the selected month${chrono.length > 1 ? "s" : ""}. Try a more recent snapshot.`);
+        return;
+      }
+      const span = done.length > 1 ? `${done[0]}_to_${done[done.length - 1]}` : done[0];
       saveBlob(`${code}-${view}-${span}.csv`, out.join("\n"));
+      if (skipped.length) setExportWarn(`Skipped ${skipped.join(", ")} — no market export available for those snapshots.`);
     } catch (e: any) {
       setExportErr(e?.message || "Export failed");
     } finally {
@@ -123,6 +152,8 @@ export default function DownloadsPage() {
   /* the original per-month files, fired sequentially */
   const downloadSeparate = async () => {
     if (!chrono.length || busy) return;
+    setExportErr(null);
+    setExportWarn(null);
     setBusy("Downloading…");
     for (const d of chrono) {
       const a = document.createElement("a");
@@ -159,21 +190,27 @@ export default function DownloadsPage() {
             Months · <b className="rd-num" style={{ color: "var(--text)" }}>{selected.length}</b> selected
           </span>
           <div className="rd-chips" style={{ marginBottom: 0 }}>
-            <button className="rd-chip" onClick={() => setSelected(allDates)}>
+            <button className="rd-chip" onClick={() => setSelected(exportableDates)}>
               All
             </button>
-            <button className="rd-chip" onClick={() => setSelected(runs[0] ? [runs[0].snapshotDate] : [])}>
+            <button className="rd-chip" onClick={() => setSelected(exportableDates.slice(0, 1))}>
               Latest only
             </button>
-            {runs.map((r) => (
-              <button
-                key={r.snapshotDate}
-                className={`rd-chip${selected.includes(r.snapshotDate) ? " on" : ""}`}
-                onClick={() => toggleDate(r.snapshotDate)}
-              >
-                {fmtDate(r.snapshotDate)}
-              </button>
-            ))}
+            {runs.map((r) => {
+              const ok = canExport(r.snapshotDate);
+              return (
+                <button
+                  key={r.snapshotDate}
+                  className={`rd-chip${selected.includes(r.snapshotDate) && ok ? " on" : ""}`}
+                  onClick={() => toggleDate(r.snapshotDate)}
+                  disabled={!ok}
+                  title={ok ? undefined : "No snapshot manifest — market exports aren't available for this month"}
+                  style={ok ? undefined : { opacity: 0.45, cursor: "not-allowed" }}
+                >
+                  {fmtDate(r.snapshotDate)}
+                </button>
+              );
+            })}
           </div>
         </div>
         <div className="rd-period">
@@ -214,15 +251,18 @@ export default function DownloadsPage() {
               ↓ {chrono.length} separate files
             </button>
           ) : null}
-          {exportErr ? <span style={{ color: "var(--gap)", fontSize: 12 }}>{exportErr}</span> : null}
+          {exportErr ? <span style={{ color: "var(--gap)", fontSize: 12, maxWidth: 320, textAlign: "right" }}>{exportErr}</span> : null}
+          {exportWarn ? <span style={{ color: "var(--watch)", fontSize: 12, maxWidth: 320, textAlign: "right" }}>{exportWarn}</span> : null}
         </div>
       </div>
       <div className="rd-footnote" style={{ marginTop: 0, marginBottom: 24 }}>
         Select several months and “One combined CSV” stitches them into a single file — the <b>snapshot_date</b> column
         distinguishes the months, ready for month-over-month pivots; “separate files” downloads the original per-month exports (your
-        browser may ask once to allow multiple downloads). IX view is a network-level summary of deployed capacity across
-        the market's exchanges; Facility view is presence across its data centres; Combined keeps both record types in
-        one file. Region exports follow the portal's tracked metro coverage, not every country in the wider region.
+        browser may ask once to allow multiple downloads). Months greyed out have no snapshot manifest, so the market
+        builder can't produce them — the raw per-snapshot files below are still available for those. IX view is a
+        network-level summary of deployed capacity across the market's exchanges; Facility view is presence across its
+        data centres; Combined keeps both record types in one file. Region exports follow the portal's tracked metro
+        coverage, not every country in the wider region.
       </div>
 
       <div className="rd-sec-head">
