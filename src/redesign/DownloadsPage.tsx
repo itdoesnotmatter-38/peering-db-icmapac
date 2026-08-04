@@ -83,6 +83,7 @@ export default function DownloadsPage() {
   }, []);
 
   const options = scopeKind === "country" ? COUNTRIES : REGIONS;
+  const optionLabel = (options.find(([c]) => c === code) || options[0])[1];
   useEffect(() => {
     if (!options.some(([c]) => c === code)) setCode(options[0][0]);
   }, [scopeKind, options, code]);
@@ -184,85 +185,105 @@ export default function DownloadsPage() {
         <h2>Market exports</h2>
         <span className="note">Generate country or region CSVs from stored snapshots — pick one month or several</span>
       </div>
-      <div className="rd-slider-bar" style={{ alignItems: "flex-start", gap: 14, flexWrap: "wrap" }}>
-        <div className="rd-period" style={{ maxWidth: 430 }}>
-          <span className="rd-eyebrow">
-            Months · <b className="rd-num" style={{ color: "var(--text)" }}>{selected.length}</b> selected
-          </span>
-          <div className="rd-chips" style={{ marginBottom: 0 }}>
-            <button className="rd-chip" onClick={() => setSelected(exportableDates)}>
-              All
-            </button>
-            <button className="rd-chip" onClick={() => setSelected(exportableDates.slice(0, 1))}>
-              Latest only
-            </button>
-            {runs.map((r) => {
-              const ok = canExport(r.snapshotDate);
-              return (
-                <button
-                  key={r.snapshotDate}
-                  className={`rd-chip${selected.includes(r.snapshotDate) && ok ? " on" : ""}`}
-                  onClick={() => toggleDate(r.snapshotDate)}
-                  disabled={!ok}
-                  title={ok ? undefined : "No snapshot manifest — market exports aren't available for this month"}
-                  style={ok ? undefined : { opacity: 0.45, cursor: "not-allowed" }}
-                >
-                  {fmtDate(r.snapshotDate)}
-                </button>
-              );
-            })}
+      <div className="rd-exportcard">
+        {/* 1 — months */}
+        <div className="rd-exprow">
+          <div className="rd-explabel">
+            Months
+            <span className="n rd-num">{chrono.length} selected</span>
           </div>
-        </div>
-        <div className="rd-period">
-          <span className="rd-eyebrow">Scope</span>
-          <div className="rd-chips" style={{ marginBottom: 0 }}>
-            <button className={`rd-chip${scopeKind === "country" ? " on" : ""}`} onClick={() => setScopeKind("country")}>
-              Country
-            </button>
-            <button className={`rd-chip${scopeKind === "region" ? " on" : ""}`} onClick={() => setScopeKind("region")}>
-              Region
-            </button>
-          </div>
-          <select className="rd-select" value={code} onChange={(e) => setCode(e.target.value)}>
-            {options.map(([c, label]) => (
-              <option key={c} value={c}>
-                {label}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div className="rd-period">
-          <span className="rd-eyebrow">View</span>
-          <div className="rd-chips" style={{ marginBottom: 0 }}>
-            {["ix", "facility", "combined"].map((v) => (
-              <button key={v} className={`rd-chip${view === v ? " on" : ""}`} onClick={() => setView(v)}>
-                {v === "ix" ? "IX view" : v === "facility" ? "Facility view" : "Combined"}
+          <div className="rd-expctl">
+            <div className="rd-chips" style={{ marginBottom: 0 }}>
+              <button className="rd-chip" onClick={() => setSelected(exportableDates)}>
+                All
               </button>
-            ))}
+              <button className="rd-chip" onClick={() => setSelected(exportableDates.slice(0, 1))}>
+                Latest only
+              </button>
+              <span className="rd-expdiv" />
+              {runs.map((r) => {
+                const ok = canExport(r.snapshotDate);
+                return (
+                  <button
+                    key={r.snapshotDate}
+                    className={`rd-chip${selected.includes(r.snapshotDate) && ok ? " on" : ""}`}
+                    onClick={() => toggleDate(r.snapshotDate)}
+                    disabled={!ok}
+                    title={ok ? undefined : "No snapshot manifest — market exports aren't available for this month"}
+                  >
+                    {fmtDate(r.snapshotDate)}
+                  </button>
+                );
+              })}
+            </div>
           </div>
         </div>
-        <div className="rd-grow" />
-        <div style={{ display: "flex", flexDirection: "column", gap: 8, alignItems: "flex-end" }}>
-          <button className="rd-btn" onClick={downloadCombined} disabled={!chrono.length || !!busy}>
-            {busy || `↓ One combined CSV${chrono.length > 1 ? ` · ${chrono.length} months` : ""}`}
-          </button>
-          {chrono.length > 1 ? (
-            <button className="rd-btn" onClick={downloadSeparate} disabled={!!busy}>
-              ↓ {chrono.length} separate files
-            </button>
-          ) : null}
-          {exportErr ? <span style={{ color: "var(--gap)", fontSize: 12, maxWidth: 320, textAlign: "right" }}>{exportErr}</span> : null}
-          {exportWarn ? <span style={{ color: "var(--watch)", fontSize: 12, maxWidth: 320, textAlign: "right" }}>{exportWarn}</span> : null}
+
+        {/* 2 — market */}
+        <div className="rd-exprow">
+          <div className="rd-explabel">Market</div>
+          <div className="rd-expctl">
+            <div className="rd-chips" style={{ marginBottom: 0 }}>
+              <button className={`rd-chip${scopeKind === "country" ? " on" : ""}`} onClick={() => setScopeKind("country")}>
+                Country
+              </button>
+              <button className={`rd-chip${scopeKind === "region" ? " on" : ""}`} onClick={() => setScopeKind("region")}>
+                Region
+              </button>
+            </div>
+            <select className="rd-select" value={code} onChange={(e) => setCode(e.target.value)} aria-label="Market">
+              {options.map(([c, label]) => (
+                <option key={c} value={c}>
+                  {label}
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
+
+        {/* 3 — view */}
+        <div className="rd-exprow">
+          <div className="rd-explabel">View</div>
+          <div className="rd-expctl">
+            <div className="rd-chips" style={{ marginBottom: 0 }}>
+              {["ix", "facility", "combined"].map((v) => (
+                <button key={v} className={`rd-chip${view === v ? " on" : ""}`} onClick={() => setView(v)}>
+                  {v === "ix" ? "IX view" : v === "facility" ? "Facility view" : "Combined"}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* 4 — action */}
+        <div className="rd-expfoot">
+          <span className="rd-expsummary rd-num">
+            {chrono.length
+              ? `${optionLabel} · ${view === "ix" ? "IX view" : view === "facility" ? "Facility view" : "Combined"} · ${
+                  chrono.length === 1 ? fmtDate(chrono[0]) : `${chrono.length} months`
+                }`
+              : "Select at least one month"}
+          </span>
+          <div className="rd-expactions">
+            {chrono.length > 1 ? (
+              <button className="rd-btn" onClick={downloadSeparate} disabled={!!busy}>
+                ↓ {chrono.length} separate files
+              </button>
+            ) : null}
+            <button className="rd-btn primary" onClick={downloadCombined} disabled={!chrono.length || !!busy}>
+              {busy || `↓ Download${chrono.length > 1 ? " combined CSV" : " CSV"}`}
+            </button>
+          </div>
+        </div>
+        {exportErr ? <div className="rd-expmsg err">{exportErr}</div> : null}
+        {exportWarn ? <div className="rd-expmsg warn">{exportWarn}</div> : null}
       </div>
       <div className="rd-footnote" style={{ marginTop: 0, marginBottom: 24 }}>
-        Select several months and “One combined CSV” stitches them into a single file — the <b>snapshot_date</b> column
-        distinguishes the months, ready for month-over-month pivots; “separate files” downloads the original per-month exports (your
-        browser may ask once to allow multiple downloads). Months greyed out have no snapshot manifest, so the market
-        builder can't produce them — the raw per-snapshot files below are still available for those. IX view is a
-        network-level summary of deployed capacity across the market's exchanges; Facility view is presence across its
-        data centres; Combined keeps both record types in one file. Region exports follow the portal's tracked metro
-        coverage, not every country in the wider region.
+        Several months download as one file with a <b>snapshot_date</b> column, ready for month-over-month pivots — or use
+        “separate files” for the original per-month exports. Greyed months have no snapshot manifest, so the market
+        builder can't produce them; their raw files are still below. <b>IX view</b> = deployed capacity across the
+        market's exchanges, <b>Facility view</b> = presence across its data centres, <b>Combined</b> = both. Region
+        exports follow the portal's tracked metro coverage.
       </div>
 
       <div className="rd-sec-head">
