@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { Link, useLocation, useSearchParams } from "react-router-dom";
 import { fetchPeeringDb } from "../peeringdbApi";
 import { useSnapshot } from "./Shell";
-import { Panel, Sparkline } from "./bits";
+import { EntityTypeahead, Panel, Sparkline } from "./bits";
 import { FacilityDirEntry, METRO_CODES, facilitiesDirectory, fmtMonth, networksDirectory, tokenMatch } from "./data";
 
 /* Facilities directory — the data-centre twin of the Exchanges directory:
@@ -12,7 +12,7 @@ import { FacilityDirEntry, METRO_CODES, facilitiesDirectory, fmtMonth, networksD
 
 type SortKey = "nets" | "dnets" | "dnetsq" | "share" | "rank";
 const GRID = "26px minmax(200px,1fr) 132px 96px 56px 64px 64px 66px 60px";
-const MAX_COMPARE = 6;
+const MAX_COMPARE = 12;
 
 const dLbl = (n: number) => (n === 0 ? "·" : `${n > 0 ? "+" : "−"}${Math.abs(n)}`);
 const cls = (n: number) => (n > 0 ? "rd-up" : n < 0 ? "rd-down" : "rd-flat");
@@ -122,6 +122,35 @@ export default function FacilitiesPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [picked.join(","), members, dirByAsn, anyLoading]);
 
+  /* pick-by-operator: every distinct owner in scope, biggest estate first,
+     so "all Equinix" is one click instead of hunting rows */
+  const operators = useMemo(() => {
+    const m = new Map<string, { org: string; isEquinix: boolean; ids: number[]; nets: number }>();
+    all.forEach((f) => {
+      const key = f.isEquinix ? "Equinix" : f.org;
+      const e = m.get(key) || { org: key, isEquinix: f.isEquinix, ids: [], nets: 0 };
+      e.ids.push(f.facilityId);
+      e.nets += f.nets;
+      m.set(key, e);
+    });
+    return Array.from(m.values())
+      .filter((o) => o.ids.length > 1 || o.isEquinix)
+      .sort((a, b) => Number(b.isEquinix) - Number(a.isEquinix) || b.nets - a.nets)
+      .slice(0, 7);
+  }, [all]);
+
+  const facOptions = useMemo(
+    () =>
+      all.map((f) => ({
+        id: f.facilityId,
+        name: f.name,
+        sub: f.isEquinix ? "Equinix" : f.org,
+        meta: `${f.nets}`,
+        extra: `${f.org} ${f.metro}`,
+      })),
+    [all]
+  );
+
   const filtered = useMemo(() => {
     const base = q.trim() ? all.filter((f) => tokenMatch(q, `${f.name} ${f.org} ${f.metro}`, f.facilityId)) : all;
     const val = (f: FacilityDirEntry) =>
@@ -148,6 +177,60 @@ export default function FacilitiesPage() {
 
   return (
     <>
+      {/* sticky picker — add by name, by operator, or from the list below */}
+      <div className="rd-facpicker">
+        <div className="rd-facpicker-row">
+          <div style={{ minWidth: 250, flex: 1, maxWidth: 400 }}>
+            <EntityTypeahead
+              options={facOptions}
+              onPick={(id) => toggle(id)}
+              onPickMany={(list) => setPicked((cur) => Array.from(new Set([...cur, ...list])).slice(0, MAX_COMPARE))}
+              exclude={new Set(picked)}
+              placeholder="Add data centres to compare — names, operators…"
+            />
+          </div>
+          <div className="rd-chips" style={{ marginBottom: 0 }}>
+            {operators.map((o) => {
+              const allIn = o.ids.every((id) => picked.includes(id));
+              return (
+                <button
+                  key={o.org}
+                  className={`rd-chip${o.isEquinix ? " eqxchip" : ""}`}
+                  title={allIn ? `Remove ${o.org}'s ${o.ids.length} data centres` : `Add all ${o.ids.length} ${o.org} data centres in scope`}
+                  onClick={() =>
+                    setPicked((cur) =>
+                      allIn ? cur.filter((id) => !o.ids.includes(id)) : Array.from(new Set([...cur, ...o.ids])).slice(0, MAX_COMPARE)
+                    )
+                  }
+                >
+                  {allIn ? "✓ " : "+ "}
+                  {o.isEquinix ? "◆ " : ""}
+                  {o.org.length > 18 ? `${o.org.slice(0, 17)}…` : o.org} <span className="rd-num">{o.ids.length}</span>
+                </button>
+              );
+            })}
+          </div>
+          <div className="rd-grow" />
+          <span className="note rd-num">
+            {picked.length}/{MAX_COMPARE} selected
+          </span>
+        </div>
+        {picked.length ? (
+          <div className="rd-facpicker-row sel">
+            <div className="rd-chips" style={{ marginBottom: 0 }}>
+              {pickedRows.map((f) => (
+                <button key={f.facilityId} className={`rd-chip on${f.isEquinix ? " eqxchip" : ""}`} onClick={() => toggle(f.facilityId)} title="Remove">
+                  {f.name.length > 26 ? `${f.name.slice(0, 25)}…` : f.name} ✕
+                </button>
+              ))}
+              <button className="rd-chip" onClick={() => setPicked([])}>
+                clear all ✕
+              </button>
+            </div>
+          </div>
+        ) : null}
+      </div>
+
       <div className="rd-slider-bar" style={{ alignItems: "center" }}>
         <div className="rd-search-box">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
@@ -157,10 +240,18 @@ export default function FacilitiesPage() {
           <input
             value={q}
             onChange={(e) => setQ(e.target.value)}
-            placeholder="Search data centres — names, operators or metros, several at once…"
-            aria-label="Search data centres"
+            placeholder="Filter the list — names, operators or metros…"
+            aria-label="Filter data centres"
           />
         </div>
+        {q.trim() && filtered.length ? (
+          <button
+            className="rd-chip"
+            onClick={() => setPicked((cur) => Array.from(new Set([...cur, ...filtered.map((f) => f.facilityId)])).slice(0, MAX_COMPARE))}
+          >
+            + Add all {filtered.length} matching
+          </button>
+        ) : null}
         <div className="rd-grow" />
         <span className="note rd-num">
           {q ? `${filtered.length} match` : `${all.length} data centres`} · {scopeName}
@@ -172,16 +263,7 @@ export default function FacilitiesPage() {
         <div className="rd-section">
           <div className="rd-sec-head">
             <h2>Compare presence · {picked.length} data centre{picked.length === 1 ? "" : "s"}</h2>
-            <div className="rd-chips" style={{ marginBottom: 0 }}>
-              {pickedRows.map((f) => (
-                <button key={f.facilityId} className="rd-chip on" onClick={() => toggle(f.facilityId)} title="Remove">
-                  {f.name.length > 22 ? `${f.name.slice(0, 21)}…` : f.name} ✕
-                </button>
-              ))}
-              <button className="rd-chip" onClick={() => setPicked([])}>
-                clear ✕
-              </button>
-            </div>
+            <span className="note">Rows = networks, columns = the selected data centres · ✓ = present</span>
           </div>
           <div className="rd-heatwrap">
             {anyLoading ? (
