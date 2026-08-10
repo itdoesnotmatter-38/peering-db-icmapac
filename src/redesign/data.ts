@@ -1266,6 +1266,89 @@ export function facilityMeta(d: TrendsResponse): Map<number, FacilityMetaEntry> 
   return m;
 }
 
+export interface FacilityDirEntry {
+  facilityId: number;
+  name: string;
+  org: string;
+  metro: string;
+  isEquinix: boolean;
+  /** networks present at latest */
+  nets: number;
+  /** month-over-month change in network count */
+  dNets: number;
+  /** quarter-over-quarter change in network count */
+  dNetsQ: number;
+  /** share of its metro's total network-facility presences */
+  metroSharePct: number;
+  /** rank within its metro by network count */
+  metroRank: number;
+  /** network count per snapshot, for the row sparkline */
+  spark: number[];
+}
+
+/** Data centres in the (scope-filtered) dataset with trend + metro context —
+    the facility twin of exchangesRanking, for the Facilities directory. */
+export function facilitiesDirectory(fd: TrendsResponse, latest: string): FacilityDirEntry[] {
+  const snaps = uniqSorted(fd.snapshots).filter((x) => x <= latest);
+  const li = snaps.length - 1;
+  const qi = li >= 3 ? li - 3 : 0;
+  const snapIdx = new Map(snaps.map((x, i) => [x, i]));
+
+  interface Acc {
+    name: string;
+    org: string;
+    metro: string;
+    perSnap: number[];
+  }
+  const agg = new Map<number, Acc>();
+  for (const r of fd.facilityTrend) {
+    const si = snapIdx.get(r.snapshotDate);
+    if (si === undefined) continue;
+    let e = agg.get(r.facilityId);
+    if (!e) {
+      e = { name: r.facilityName, org: r.facilityOrgName || "—", metro: r.metro, perSnap: new Array(snaps.length).fill(0) };
+      agg.set(r.facilityId, e);
+    }
+    e.perSnap[si] = Math.max(e.perSnap[si], r.networkCount || 0);
+    if (si === li) {
+      e.name = r.facilityName || e.name;
+      e.org = r.facilityOrgName || e.org;
+      e.metro = r.metro || e.metro;
+    }
+  }
+
+  // metro totals + rank at latest
+  const metroTotal = new Map<string, number>();
+  agg.forEach((e) => metroTotal.set(e.metro, (metroTotal.get(e.metro) || 0) + e.perSnap[li]));
+  const byMetro = new Map<string, Array<{ id: number; n: number }>>();
+  agg.forEach((e, id) => {
+    const a = byMetro.get(e.metro);
+    if (a) a.push({ id, n: e.perSnap[li] });
+    else byMetro.set(e.metro, [{ id, n: e.perSnap[li] }]);
+  });
+  const rankOf = new Map<number, number>();
+  byMetro.forEach((list) => {
+    [...list].sort((a, b) => b.n - a.n).forEach((x, i) => rankOf.set(x.id, i + 1));
+  });
+
+  return Array.from(agg.entries())
+    .map(([facilityId, e]) => ({
+      facilityId,
+      name: e.name,
+      org: e.org,
+      metro: e.metro,
+      isEquinix: isEquinixFacilityOrg(e.org),
+      nets: e.perSnap[li],
+      dNets: li > 0 ? e.perSnap[li] - e.perSnap[li - 1] : 0,
+      dNetsQ: li > 0 ? e.perSnap[li] - e.perSnap[qi] : 0,
+      metroSharePct: (metroTotal.get(e.metro) || 0) > 0 ? (e.perSnap[li] / (metroTotal.get(e.metro) || 1)) * 100 : 0,
+      metroRank: rankOf.get(facilityId) || 0,
+      spark: e.perSnap,
+    }))
+    .filter((e) => e.nets > 0)
+    .sort((a, b) => b.nets - a.nets);
+}
+
 /** Facilities (data centres) in the scope-filtered dataset, by network presence. */
 export function facilitiesRanking(fd: TrendsResponse, latest: string): FacilityRank[] {
   return fd.facilityTrend

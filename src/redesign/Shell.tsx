@@ -90,6 +90,9 @@ function viewMeta(pathname: string): { title: string; desc: string } {
   if (pathname.startsWith("/metro")) {
     return { title: "Metro profile", desc: "Everything in one metro — exchanges, facilities, networks, and Equinix share" };
   }
+  if (pathname === "/facilities") {
+    return { title: "Data centres", desc: "Every facility in scope — compare who's racked where, or open its profile" };
+  }
   if (pathname.startsWith("/fac")) {
     return { title: "Data-centre profile", desc: "Which networks are in one facility, its metro rank, and network-count trend" };
   }
@@ -415,6 +418,10 @@ export default function Shell() {
           <NavLink to={navTo("/exchanges")} className={({ isActive }) => `rd-nav-item${isActive ? " active" : ""}`}>
             {icons.exchanges}
             <span>Exchanges</span>
+          </NavLink>
+          <NavLink to={navTo("/facilities")} className={({ isActive }) => `rd-nav-item${isActive ? " active" : ""}`}>
+            {icons.movement}
+            <span>Data centres</span>
           </NavLink>
           <NavLink to={navTo("/networks")} className={({ isActive }) => `rd-nav-item${isActive ? " active" : ""}`}>
             {icons.networks}
