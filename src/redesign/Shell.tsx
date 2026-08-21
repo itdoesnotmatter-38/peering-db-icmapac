@@ -15,7 +15,7 @@ import {
   scopeToParam,
 } from "./data";
 import { Loading, LoadError } from "./bits";
-import { buildReport } from "./report";
+import { buildReport, buildNetworkReport } from "./report";
 
 /* ============================================================
    App shell: left rail, context bar with the GLOBAL metro-scope
@@ -503,14 +503,38 @@ export default function Shell() {
               // let the button repaint before the (synchronous) PDF build
               setTimeout(() => {
                 try {
-                  buildReport({
-                    data: ctx.data,
-                    scoped: ctx.scoped,
-                    derived: ctx.derived,
-                    scopeName: ctx.scopeName,
-                    asOf: ctx.asOf,
-                    networks: loadWatchlist(),
-                  });
+                  /* the report follows what you're looking at: a network
+                     profile (plus any comparators) or an Analysis selection
+                     yields just those networks; anywhere else, the market report */
+                  const netMatch = location.pathname.match(/^\/net\/(\d+)/);
+                  const idsFrom = (key: string) =>
+                    (searchParams.get(key) || "")
+                      .split(",")
+                      .map((x) => Number(x.trim()))
+                      .filter((n) => Number.isFinite(n) && n > 0);
+                  const focus = netMatch
+                    ? [Number(netMatch[1]), ...idsFrom("with")]
+                    : location.pathname === "/compare"
+                    ? idsFrom("nets")
+                    : [];
+                  if (focus.length) {
+                    buildNetworkReport({
+                      data: ctx.data,
+                      derived: ctx.derived,
+                      scopeName: ctx.scopeName,
+                      asOf: ctx.asOf,
+                      asns: Array.from(new Set(focus)),
+                    });
+                  } else {
+                    buildReport({
+                      data: ctx.data,
+                      scoped: ctx.scoped,
+                      derived: ctx.derived,
+                      scopeName: ctx.scopeName,
+                      asOf: ctx.asOf,
+                      networks: loadWatchlist(),
+                    });
+                  }
                 } finally {
                   setBuilding(false);
                 }

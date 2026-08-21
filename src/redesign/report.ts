@@ -399,3 +399,211 @@ export function buildReport({ data, scoped, derived, scopeName, asOf, networks }
 
   doc.save(`peeringdb-report-${latest}.pdf`);
 }
+
+/* ---------------- focused network report ----------------
+   What you get when you're looking at one network (or a comparison set):
+   just those networks — no market league tables. */
+
+export interface NetworkReportOpts {
+  data: TrendsResponse;
+  derived: Derived;
+  scopeName: string;
+  asOf: string;
+  asns: number[];
+}
+
+export function buildNetworkReport({ data, derived, scopeName, asOf, asns }: NetworkReportOpts) {
+  const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
+  const latest = derived.latest;
+  const scopeMetros = derived.metros.map((m) => m.metro);
+  const inScope = new Set(scopeMetros);
+  const profiles = asns.map((a) => networkProfile(data, a, asOf)).filter((p) => p.found);
+  const stamp = `${scopeName} · snapshot ${fmtDate(latest)}`;
+  let page = 0;
+
+  const T = (txt: string, x: number, y: number, opts?: any) => doc.text(safe(txt), x, y, opts);
+  const clean = (d: any) => {
+    if (Array.isArray(d.cell?.text)) d.cell.text = d.cell.text.map((t: any) => safe(String(t)));
+  };
+  const foot = () => {
+    page += 1;
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(7.5);
+    doc.setTextColor(...C.faint);
+    T(`PeeringDB Dashboard · ${stamp}`, M, H - 7);
+    T(`${page}`, W - M, H - 7, { align: "right" });
+  };
+
+  if (!profiles.length) {
+    T("No snapshot data for the selected networks.", M, 30);
+    foot();
+    doc.save(`network-report-${latest}.pdf`);
+    return;
+  }
+
+  profiles.forEach((p, idx) => {
+    if (idx > 0) doc.addPage();
+
+    // title band
+    doc.setFillColor(...C.text);
+    doc.rect(0, 0, W, 34, "F");
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(19);
+    doc.setTextColor(...C.white);
+    T(p.name, M, 18);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(9);
+    doc.setTextColor(200, 214, 226);
+    T(`AS${p.asn} · ${p.type} · ${scopeName} · snapshot ${fmtDate(latest)}`, M, 27);
+    doc.setFontSize(8);
+    T(`generated ${new Date().toISOString().slice(0, 10)}`, W - M, 27, { align: "right" });
+
+    const ports = p.ports.filter((x) => inScope.has(x.metro));
+    const eqxG = ports.filter((x) => x.isEquinix).reduce((a, x) => a + x.capG, 0);
+    const totG = ports.reduce((a, x) => a + x.capG, 0);
+    const kpis: Array<[string, string, string]> = [
+      ["Deployed capacity", `${(totG / 1000).toFixed(1)} Tbps`, `${dTLbl(p.dCapT)} vs prev month`],
+      ["Metros present", String(p.footprint.filter((f) => inScope.has(f.metro)).length), `of ${scopeMetros.length} in scope`],
+      ["Exchange ports", String(ports.length), "in the scoped metros"],
+      ["On Equinix", totG ? `${((eqxG / totG) * 100).toFixed(0)}%` : "-", "of its IX capacity here"],
+      ["Facility presences", String(p.facCount), "listed data centres"],
+    ];
+    const kw = (W - M * 2 - 4 * 4) / 5;
+    kpis.forEach(([label, value, sub], i) => {
+      const x = M + i * (kw + 4);
+      doc.setDrawColor(...C.line);
+      doc.setFillColor(...C.white);
+      doc.roundedRect(x, 42, kw, 22, 2, 2, "FD");
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(6.8);
+      doc.setTextColor(...C.faint);
+      T(label.toUpperCase(), x + 4, 47.5);
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(14);
+      doc.setTextColor(...(label === "On Equinix" ? C.equinix : C.text));
+      T(value, x + 4, 56);
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(6.8);
+      doc.setTextColor(...C.muted);
+      T(sub, x + 4, 61);
+    });
+
+    // allocation across exchanges, grouped by metro
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(10);
+    doc.setTextColor(...C.text);
+    T("Capacity allocation across exchanges", M, 76);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(7.5);
+    doc.setTextColor(...C.muted);
+    T("violet = Equinix · % is that port's share of this network's capacity in the metro", M + 74, 76);
+
+    const byMetro = new Map<string, typeof ports>();
+    ports.forEach((x) => {
+      const a = byMetro.get(x.metro);
+      if (a) a.push(x);
+      else byMetro.set(x.metro, [x]);
+    });
+    const maxPort = ports.reduce((a, x) => Math.max(a, x.capG), 1);
+    const bx = M + 66;
+    const bw = W - M * 2 - 66 - 40;
+    let y = 84;
+    Array.from(byMetro.entries())
+      .sort((a, b) => b[1].reduce((s, x) => s + x.capG, 0) - a[1].reduce((s, x) => s + x.capG, 0))
+      .forEach(([metro, list]) => {
+        if (y > H - 26) return;
+        const tot = list.reduce((a, x) => a + x.capG, 0);
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(8);
+        doc.setTextColor(...C.text);
+        T(`${metro}`, M, y + 3);
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(7);
+        doc.setTextColor(...C.muted);
+        T(tot >= 1000 ? `${(tot / 1000).toFixed(1)}T total` : `${tot.toFixed(0)}G total`, M + 34, y + 3);
+        y += 5.5;
+        [...list]
+          .sort((a, b) => b.capG - a.capG)
+          .forEach((port) => {
+            if (y > H - 22) return;
+            doc.setFont("helvetica", "normal");
+            doc.setFontSize(7.4);
+            doc.setTextColor(...(port.isEquinix ? C.equinix : C.text));
+            T(port.ixName.length > 30 ? `${port.ixName.slice(0, 29)}…` : port.ixName, M + 4, y + 3.2);
+            const w = Math.max(0.8, (port.capG / maxPort) * bw);
+            doc.setFillColor(...(port.isEquinix ? C.equinix : C.accent));
+            doc.roundedRect(bx, y, w, 4.2, 0.8, 0.8, "F");
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(7.4);
+            doc.setTextColor(...C.text);
+            T(port.capG >= 1000 ? `${(port.capG / 1000).toFixed(1)}T` : `${port.capG.toFixed(0)}G`, bx + bw + 4, y + 3.2);
+            doc.setFont("helvetica", "normal");
+            doc.setTextColor(...C.muted);
+            T(tot ? `${((port.capG / tot) * 100).toFixed(0)}%` : "", bx + bw + 20, y + 3.2);
+            y += 5.6;
+          });
+        y += 2;
+      });
+    if (!ports.length) {
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(8.5);
+      doc.setTextColor(...C.muted);
+      T(`${p.name} has no listed exchange ports in ${scopeName}.`, M, 88);
+    }
+    foot();
+
+    // footprint + movement on a second page
+    doc.addPage();
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(13);
+    doc.setTextColor(...C.text);
+    T(`${p.name} · footprint and movement`, M, M + 2);
+    doc.setDrawColor(...C.line);
+    doc.setLineWidth(0.4);
+    doc.line(M, M + 5, W - M, M + 5);
+
+    const fp = p.footprint.filter((f) => inScope.has(f.metro));
+    autoTable(doc, {
+      startY: M + 10,
+      head: [["Metro", "Capacity", "Exchanges", "Data centres"]],
+      body: fp.map((f) => [f.metro, `${f.capT.toFixed(2)}T`, String(f.ixCount), String(f.facCount)]),
+      theme: "grid",
+      styles: { font: "helvetica", fontSize: 7.8, cellPadding: 1.8, textColor: C.text, lineColor: C.line, lineWidth: 0.1 },
+      headStyles: { fillColor: C.text, textColor: C.white, fontSize: 7.2, fontStyle: "bold" },
+      columnStyles: { 1: { halign: "right", fontStyle: "bold" }, 2: { halign: "right" }, 3: { halign: "right" } },
+      tableWidth: 120,
+      margin: { left: M },
+      didParseCell: clean,
+    });
+
+    const moves: Array<[string, string, string, string]> = [];
+    p.joined.filter((x) => inScope.has(x.metro)).forEach((x) => moves.push(["Joined", x.ixName, x.metro, `${x.capG.toFixed(0)}G`]));
+    p.upgraded
+      .filter((x) => inScope.has(x.metro))
+      .forEach((x) => moves.push(["Upgraded", x.ixName, x.metro, `+${x.dCapG.toFixed(0)}G`]));
+    p.left.filter((x) => inScope.has(x.metro)).forEach((x) => moves.push(["Left", x.ixName, x.metro, `${x.capG.toFixed(0)}G`]));
+    autoTable(doc, {
+      startY: M + 10,
+      head: [["Movement this month", "Exchange", "Metro", "Capacity"]],
+      body: moves.length ? moves : [["No port changes", "-", "-", "-"]],
+      theme: "grid",
+      styles: { font: "helvetica", fontSize: 7.8, cellPadding: 1.8, textColor: C.text, lineColor: C.line, lineWidth: 0.1 },
+      headStyles: { fillColor: C.text, textColor: C.white, fontSize: 7.2, fontStyle: "bold" },
+      columnStyles: { 3: { halign: "right", fontStyle: "bold" } },
+      tableWidth: 130,
+      margin: { left: M + 130 },
+      didParseCell: (d) => {
+        clean(d);
+        if (d.section !== "body") return;
+        const kind = moves[d.row.index]?.[0];
+        if (kind === "Joined") d.cell.styles.textColor = C.up;
+        if (kind === "Left") d.cell.styles.textColor = C.down;
+        if (kind === "Upgraded") d.cell.styles.textColor = C.accent;
+      },
+    });
+    foot();
+  });
+
+  const name = profiles.length === 1 ? `${profiles[0].name.replace(/[^a-z0-9]+/gi, "-").toLowerCase()}-AS${profiles[0].asn}` : `networks-${profiles.length}`;
+  doc.save(`${name}-${latest}.pdf`);
+}
