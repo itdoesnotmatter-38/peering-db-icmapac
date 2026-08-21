@@ -29,6 +29,16 @@ const C = {
   white: [255, 255, 255] as [number, number, number],
 };
 
+// categorical palette for stacked segments — mirrors the web profile
+const SEG: Array<[number, number, number]> = [
+  [43, 176, 196],
+  [79, 134, 214],
+  [63, 178, 127],
+  [224, 167, 60],
+  [216, 97, 125],
+  [124, 138, 160],
+];
+
 const W = 297;
 const H = 210;
 const M = 14;
@@ -504,9 +514,8 @@ export function buildNetworkReport({ data, derived, scopeName, asOf, asns }: Net
       if (a) a.push(x);
       else byMetro.set(x.metro, [x]);
     });
-    const maxPort = ports.reduce((a, x) => Math.max(a, x.capG), 1);
-    const bx = M + 66;
-    const bw = W - M * 2 - 66 - 40;
+    const bx = M;
+    const bw = W - M * 2;
     let y = 84;
     const bottom = H - 16;
     /* the allocation list continues onto as many pages as the footprint needs —
@@ -524,42 +533,88 @@ export function buildNetworkReport({ data, derived, scopeName, asOf, asns }: Net
       doc.line(M, M + 5, W - M, M + 5);
       y = M + 12;
     };
+
     Array.from(byMetro.entries())
       .sort((a, b) => b[1].reduce((s, x) => s + x.capG, 0) - a[1].reduce((s, x) => s + x.capG, 0))
       .forEach(([metro, list]) => {
-        // keep a metro heading with at least its first port row
-        flow(11.5);
         const tot = list.reduce((a, x) => a + x.capG, 0);
+        const segs = [...list].sort((a, b) => b.capG - a.capG).slice(0, 6);
+        const rest = [...list].sort((a, b) => b.capG - a.capG).slice(6);
+        if (rest.length) {
+          segs.push({
+            ixId: -1,
+            ixName: `${rest.length} more exchanges`,
+            metro,
+            isEquinix: false,
+            capG: rest.reduce((a, x) => a + x.capG, 0),
+            dCapG: 0,
+          } as any);
+        }
+        const fpRow = p.footprint.find((f) => f.metro === metro);
+        // metro header + stacked bar + one legend row each, kept together
+        flow(13 + segs.length * 5.4);
+
+        // header line
         doc.setFont("helvetica", "bold");
-        doc.setFontSize(8);
+        doc.setFontSize(9);
         doc.setTextColor(...C.text);
-        T(`${metro}`, M, y + 3);
+        T(metro, M, y + 3.4);
         doc.setFont("helvetica", "normal");
         doc.setFontSize(7);
-        doc.setTextColor(...C.muted);
-        T(tot >= 1000 ? `${(tot / 1000).toFixed(1)}T total` : `${tot.toFixed(0)}G total`, M + 34, y + 3);
-        y += 5.5;
-        [...list]
-          .sort((a, b) => b.capG - a.capG)
-          .forEach((port) => {
-            flow(6);
-            doc.setFont("helvetica", "normal");
-            doc.setFontSize(7.4);
-            doc.setTextColor(...(port.isEquinix ? C.equinix : C.text));
-            T(port.ixName.length > 30 ? `${port.ixName.slice(0, 29)}…` : port.ixName, M + 4, y + 3.2);
-            const w = Math.max(0.8, (port.capG / maxPort) * bw);
-            doc.setFillColor(...(port.isEquinix ? C.equinix : C.accent));
-            doc.roundedRect(bx, y, w, 4.2, 0.8, 0.8, "F");
+        doc.setTextColor(...C.faint);
+        T(`${fpRow ? `${fpRow.ixCount} IX · ${fpRow.facCount} DC` : `${list.length} IX`}`, M + 40, y + 3.4);
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(9);
+        doc.setTextColor(...C.text);
+        T(tot >= 1000 ? `${(tot / 1000).toFixed(1)}T` : `${tot.toFixed(0)}G`, W - M, y + 3.4, { align: "right" });
+        y += 6.5;
+
+        // one stacked bar across the full width
+        let sx = bx;
+        segs.forEach((seg, i) => {
+          const w = tot > 0 ? Math.max(0.6, (seg.capG / tot) * bw) : 0;
+          const col = seg.isEquinix ? C.equinix : SEG[i % SEG.length];
+          doc.setFillColor(...col);
+          doc.rect(sx, y, w, 7, "F");
+          if (w > 16) {
             doc.setFont("helvetica", "bold");
             doc.setFontSize(7.4);
-            doc.setTextColor(...C.text);
-            T(port.capG >= 1000 ? `${(port.capG / 1000).toFixed(1)}T` : `${port.capG.toFixed(0)}G`, bx + bw + 4, y + 3.2);
-            doc.setFont("helvetica", "normal");
-            doc.setTextColor(...C.muted);
-            T(tot ? `${((port.capG / tot) * 100).toFixed(0)}%` : "", bx + bw + 20, y + 3.2);
-            y += 5.6;
-          });
-        y += 2;
+            doc.setTextColor(255, 255, 255);
+            T(seg.capG >= 1000 ? `${(seg.capG / 1000).toFixed(1)}T` : `${seg.capG.toFixed(0)}G`, sx + w / 2, y + 4.7, {
+              align: "center",
+            });
+          }
+          sx += w;
+        });
+        y += 10;
+
+        // legend — swatch · exchange · EQX tag · capacity + share
+        segs.forEach((seg, i) => {
+          const col = seg.isEquinix ? C.equinix : SEG[i % SEG.length];
+          doc.setFillColor(...col);
+          doc.roundedRect(M + 1, y - 2.6, 2.6, 2.6, 0.5, 0.5, "F");
+          doc.setFont("helvetica", "normal");
+          doc.setFontSize(7.6);
+          doc.setTextColor(...(seg.isEquinix ? C.equinix : C.text));
+          T(seg.ixName.length > 40 ? `${seg.ixName.slice(0, 39)}…` : seg.ixName, M + 6, y);
+          if (seg.isEquinix) {
+            doc.setFillColor(...C.equinixSoft);
+            doc.roundedRect(W - M - 44, y - 2.9, 9, 3.6, 0.6, 0.6, "F");
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(5.4);
+            doc.setTextColor(...C.equinix);
+            T("EQX", W - M - 39.5, y - 0.4, { align: "center" });
+          }
+          doc.setFont("helvetica", "bold");
+          doc.setFontSize(7.6);
+          doc.setTextColor(...C.text);
+          T(seg.capG >= 1000 ? `${(seg.capG / 1000).toFixed(1)}T` : `${seg.capG.toFixed(0)}G`, W - M - 16, y, { align: "right" });
+          doc.setFont("helvetica", "normal");
+          doc.setTextColor(...C.muted);
+          T(tot ? `${((seg.capG / tot) * 100).toFixed(0)}%` : "-", W - M, y, { align: "right" });
+          y += 5.4;
+        });
+        y += 3.5;
       });
     if (!ports.length) {
       doc.setFont("helvetica", "normal");
