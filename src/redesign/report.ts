@@ -508,10 +508,27 @@ export function buildNetworkReport({ data, derived, scopeName, asOf, asns }: Net
     const bx = M + 66;
     const bw = W - M * 2 - 66 - 40;
     let y = 84;
+    const bottom = H - 16;
+    /* the allocation list continues onto as many pages as the footprint needs —
+       never silently truncate a metro (that hid 9 of Fastly's 13) */
+    const flow = (needed: number) => {
+      if (y + needed <= bottom) return;
+      foot();
+      doc.addPage();
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(11);
+      doc.setTextColor(...C.text);
+      T(`${p.name} · capacity allocation (continued)`, M, M + 2);
+      doc.setDrawColor(...C.line);
+      doc.setLineWidth(0.4);
+      doc.line(M, M + 5, W - M, M + 5);
+      y = M + 12;
+    };
     Array.from(byMetro.entries())
       .sort((a, b) => b[1].reduce((s, x) => s + x.capG, 0) - a[1].reduce((s, x) => s + x.capG, 0))
       .forEach(([metro, list]) => {
-        if (y > H - 26) return;
+        // keep a metro heading with at least its first port row
+        flow(11.5);
         const tot = list.reduce((a, x) => a + x.capG, 0);
         doc.setFont("helvetica", "bold");
         doc.setFontSize(8);
@@ -525,7 +542,7 @@ export function buildNetworkReport({ data, derived, scopeName, asOf, asns }: Net
         [...list]
           .sort((a, b) => b.capG - a.capG)
           .forEach((port) => {
-            if (y > H - 22) return;
+            flow(6);
             doc.setFont("helvetica", "normal");
             doc.setFontSize(7.4);
             doc.setTextColor(...(port.isEquinix ? C.equinix : C.text));
