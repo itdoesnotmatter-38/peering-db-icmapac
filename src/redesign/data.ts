@@ -2014,3 +2014,65 @@ export function watchRows(d: TrendsResponse, latest: string, prev: string, asns:
     };
   });
 }
+
+/* ---------------- CSV helpers ---------------- */
+
+/** Write rows to a CSV file the browser downloads. */
+export function saveCsv(name: string, rows: Array<Array<string | number>>) {
+  const csv = rows.map((r) => r.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(",")).join("\n");
+  const blob = new Blob([csv], { type: "text/csv" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = name;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+/** Long-format allocation export: one row per network × exchange port, with
+    the port's share of that network's capacity in the metro. Pivot-ready —
+    drop into Excel and pivot network × exchange without reshaping. */
+export function allocationCsvRows(
+  profiles: NetworkProfile[],
+  metros: string[],
+  snapshot: string
+): Array<Array<string | number>> {
+  const inScope = new Set(metros);
+  const head = [
+    "snapshot_date",
+    "network",
+    "asn",
+    "metro",
+    "exchange",
+    "ix_id",
+    "operator",
+    "capacity_gbps",
+    "share_of_metro_pct",
+    "mom_change_gbps",
+    "network_metro_total_gbps",
+  ];
+  const rows: Array<Array<string | number>> = [head];
+  profiles.forEach((p) => {
+    const ports = p.ports.filter((x) => inScope.has(x.metro));
+    const totalByMetro = new Map<string, number>();
+    ports.forEach((x) => totalByMetro.set(x.metro, (totalByMetro.get(x.metro) || 0) + x.capG));
+    [...ports]
+      .sort((a, b) => a.metro.localeCompare(b.metro) || b.capG - a.capG)
+      .forEach((x) => {
+        const tot = totalByMetro.get(x.metro) || 0;
+        rows.push([
+          snapshot,
+          p.name,
+          p.asn,
+          x.metro,
+          x.ixName,
+          x.ixId,
+          x.isEquinix ? "Equinix" : "other",
+          x.capG.toFixed(1),
+          tot > 0 ? ((x.capG / tot) * 100).toFixed(1) : "0.0",
+          x.dCapG.toFixed(1),
+          tot.toFixed(1),
+        ]);
+      });
+  });
+  return rows;
+}

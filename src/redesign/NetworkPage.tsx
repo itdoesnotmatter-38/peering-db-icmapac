@@ -13,6 +13,8 @@ import {
   networkProfile,
   networksDirectory,
   saveWatchlist,
+  allocationCsvRows,
+  saveCsv,
 } from "./data";
 
 /* Network deep dive. The allocation & presence section renders ONE block
@@ -387,13 +389,27 @@ export default function NetworkPage() {
 
       <div className="rd-sec-head">
         <h2>Exchange allocation — {scopeName}</h2>
-        <span className="note rd-num">
-          {multi
-            ? `${visibleFootprint.length} metro${visibleFootprint.length === 1 ? "" : "s"} · cell = port capacity · share of that network's metro total`
-            : `${blocks.length} metro${blocks.length === 1 ? "" : "s"} · ${
-                totalScopedG >= 1000 ? `${(totalScopedG / 1000).toFixed(1)} Tbps` : `${totalScopedG.toFixed(0)} Gbps`
-              } deployed`}
-        </span>
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <span className="note rd-num">
+            {multi
+              ? `${visibleFootprint.length} metro${visibleFootprint.length === 1 ? "" : "s"} · cell = port capacity · share of that network's metro total`
+              : `${blocks.length} metro${blocks.length === 1 ? "" : "s"} · ${
+                  totalScopedG >= 1000 ? `${(totalScopedG / 1000).toFixed(1)} Tbps` : `${totalScopedG.toFixed(0)} Gbps`
+                } deployed`}
+          </span>
+          <button
+            className="rd-btn"
+            onClick={() =>
+              saveCsv(
+                `allocation-${compareProfiles.map((x) => x.asn).join("-")}-${latest}.csv`,
+                allocationCsvRows(compareProfiles, visibleFootprint.map((f) => f.metro), latest)
+              )
+            }
+            title="One row per network × exchange, with each port's share of that network's metro capacity"
+          >
+            ↓ Allocation CSV
+          </button>
+        </div>
       </div>
 
       {/* multi-network: exchanges × networks matrix, mirroring the DC section */}

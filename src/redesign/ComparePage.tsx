@@ -13,6 +13,8 @@ import {
   networkProfile,
   networkScopeSeries,
   networksDirectory,
+  allocationCsvRows,
+  saveCsv,
   topNetworksOnIxs,
 } from "./data";
 
@@ -369,9 +371,18 @@ export default function ComparePage() {
             {pivot === "exchange" ? `${ixs.length} exchanges` : `${metros.length} metros · ${scopeName}`}
           </span>
           {effAsns.length ? (
-            <button className="rd-btn" onClick={exportCsv}>
-              ↓ Export CSV
-            </button>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button className="rd-btn" onClick={exportCsv} title="The matrix as shown above">
+                ↓ Matrix CSV
+              </button>
+              <button
+                className="rd-btn"
+                onClick={() => saveCsv(`allocation-by-exchange-${derived.latest}.csv`, allocationCsvRows(profiles, metros, derived.latest))}
+                title="One row per network × exchange, with each port's share of that network's metro capacity"
+              >
+                ↓ Allocation CSV
+              </button>
+            </div>
           ) : null}
         </div>
       </div>
