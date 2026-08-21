@@ -9,11 +9,13 @@ import {
   filterByMetros,
   fmtDate,
   loadTrends,
+  loadWatchlist,
   paramToScope,
   scopeLabel,
   scopeToParam,
 } from "./data";
 import { Loading, LoadError } from "./bits";
+import { buildReport } from "./report";
 
 /* ============================================================
    App shell: left rail, context bar with the GLOBAL metro-scope
@@ -263,6 +265,7 @@ export default function Shell() {
     error: null,
   });
   const [attempt, setAttempt] = useState(0);
+  const [building, setBuilding] = useState(false);
   const toggleTheme = useTheme();
   const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -492,11 +495,34 @@ export default function Shell() {
               )}
             </div>
           ) : null}
-          <button className="rd-btn" onClick={() => window.print()} title="Print or save this view as a PDF, charts included">
+          <button
+            className="rd-btn"
+            onClick={() => {
+              if (!ctx) return;
+              setBuilding(true);
+              // let the button repaint before the (synchronous) PDF build
+              setTimeout(() => {
+                try {
+                  buildReport({
+                    data: ctx.data,
+                    scoped: ctx.scoped,
+                    derived: ctx.derived,
+                    scopeName: ctx.scopeName,
+                    asOf: ctx.asOf,
+                    networks: loadWatchlist(),
+                  });
+                } finally {
+                  setBuilding(false);
+                }
+              }, 30);
+            }}
+            disabled={!ctx || building}
+            title="Download a designed PDF report — market summary, exchanges, network deep-dives, data centres"
+          >
             <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.8">
               <path d="M6 9V3h12v6M6 18H4v-6h16v6h-2M8 14h8v7H8z" />
             </svg>
-            PDF
+            {building ? "Building…" : "PDF report"}
           </button>
           <Link to="/live" className="rd-btn">
             <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.8">
