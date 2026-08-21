@@ -492,12 +492,28 @@ export default function Shell() {
               )}
             </div>
           ) : null}
+          <button className="rd-btn" onClick={() => window.print()} title="Print or save this view as a PDF, charts included">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.8">
+              <path d="M6 9V3h12v6M6 18H4v-6h16v6h-2M8 14h8v7H8z" />
+            </svg>
+            PDF
+          </button>
           <Link to="/live" className="rd-btn">
             <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.8">
               <path d="M13 2 4 14h7l-1 8 9-12h-7z" />
             </svg>
             Live explore
           </Link>
+        </div>
+
+        {/* print-only banner so the PDF carries its own context */}
+        <div className="rd-printhead">
+          <div className="ttl">
+            PeeringDB Dashboard · <b>{meta.title}</b>
+          </div>
+          <div className="sub">
+            {scopeLabel(scope)} · snapshot {fmtDate(asOf)} · generated {new Date().toISOString().slice(0, 10)}
+          </div>
         </div>
 
         {state.error ? (
