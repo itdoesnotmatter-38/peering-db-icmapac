@@ -373,6 +373,19 @@ export default function Shell() {
 
   /* keep ?m= when switching tabs */
   const search = searchParams.toString() ? `?${searchParams.toString()}` : "";
+
+  /* what a PDF click will produce, decided by the route so the button can say so */
+  const reportFocus = useMemo(() => {
+    const idsFrom = (key: string) =>
+      (searchParams.get(key) || "")
+        .split(",")
+        .map((x) => Number(x.trim()))
+        .filter((n) => Number.isFinite(n) && n > 0);
+    const netMatch = location.pathname.match(/^\/net\/(\d+)/);
+    if (netMatch) return Array.from(new Set([Number(netMatch[1]), ...idsFrom("with")]));
+    if (location.pathname === "/compare") return Array.from(new Set(idsFrom("nets")));
+    return [];
+  }, [location.pathname, searchParams]);
   const navTo = (path: string) => ({ pathname: path, search });
 
   return (
@@ -506,24 +519,14 @@ export default function Shell() {
                   /* the report follows what you're looking at: a network
                      profile (plus any comparators) or an Analysis selection
                      yields just those networks; anywhere else, the market report */
-                  const netMatch = location.pathname.match(/^\/net\/(\d+)/);
-                  const idsFrom = (key: string) =>
-                    (searchParams.get(key) || "")
-                      .split(",")
-                      .map((x) => Number(x.trim()))
-                      .filter((n) => Number.isFinite(n) && n > 0);
-                  const focus = netMatch
-                    ? [Number(netMatch[1]), ...idsFrom("with")]
-                    : location.pathname === "/compare"
-                    ? idsFrom("nets")
-                    : [];
+                  const focus = reportFocus;
                   if (focus.length) {
                     buildNetworkReport({
                       data: ctx.data,
                       derived: ctx.derived,
                       scopeName: ctx.scopeName,
                       asOf: ctx.asOf,
-                      asns: Array.from(new Set(focus)),
+                      asns: focus,
                     });
                   } else {
                     buildReport({
@@ -541,12 +544,20 @@ export default function Shell() {
               }, 30);
             }}
             disabled={!ctx || building}
-            title="Download a designed PDF report — market summary, exchanges, network deep-dives, data centres"
+            title={
+              reportFocus.length
+                ? `Download a PDF for the ${reportFocus.length === 1 ? "selected network" : `${reportFocus.length} selected networks`} only`
+                : "Download the market PDF report — summary, exchanges, data centres, exclusivity"
+            }
           >
             <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.8">
               <path d="M6 9V3h12v6M6 18H4v-6h16v6h-2M8 14h8v7H8z" />
             </svg>
-            {building ? "Building…" : "PDF report"}
+            {building
+              ? "Building…"
+              : reportFocus.length
+              ? `PDF · ${reportFocus.length} network${reportFocus.length === 1 ? "" : "s"}`
+              : "PDF report"}
           </button>
           <Link to="/live" className="rd-btn">
             <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.8">

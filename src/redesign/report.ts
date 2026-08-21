@@ -604,6 +604,7 @@ export function buildNetworkReport({ data, derived, scopeName, asOf, asns }: Net
     foot();
   });
 
-  const name = profiles.length === 1 ? `${profiles[0].name.replace(/[^a-z0-9]+/gi, "-").toLowerCase()}-AS${profiles[0].asn}` : `networks-${profiles.length}`;
+  const slug = (n: string) => n.replace(/[^a-z0-9]+/gi, "-").replace(/^-+|-+$/g, "").toLowerCase();
+  const name = profiles.length === 1 ? `${slug(profiles[0].name)}-AS${profiles[0].asn}` : `networks-${profiles.length}`;
   doc.save(`${name}-${latest}.pdf`);
 }
