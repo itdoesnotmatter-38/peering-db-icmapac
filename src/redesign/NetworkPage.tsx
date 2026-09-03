@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { fetchPeeringDb } from "../peeringdbApi";
 import { useSnapshot } from "./Shell";
-import { Bar, Kpi, NetworkTypeahead, Panel, useTooltip } from "./bits";
+import { Bar, Kpi, NetworkTypeahead, Panel, useTooltip, DualRange } from "./bits";
 import {
   METRO_CODES,
   NetworkPort,
@@ -13,6 +13,7 @@ import {
   networkProfile,
   networksDirectory,
   networkPortHistory,
+  PortHistoryRow,
   saveWatchlist,
   allocationCsvRows,
   saveCsv,
@@ -210,6 +211,55 @@ export default function NetworkPage() {
     hist.snaps.forEach((d) => seen.set(month(d), (seen.get(month(d)) || 0) + 1));
     return hist.snaps.map((d) => (seen.get(month(d))! > 1 ? `${Number(d.slice(8, 10))} ${month(d)}` : month(d)));
   }, [hist.snaps]);
+  /* period the movement view covers — defaults to the whole window, URL-backed
+     as ?pf=/?pt= so a chosen period is shareable */
+  const period = useMemo(() => {
+    const n = hist.snaps.length;
+    const clamp = (v: number, d: number) => (Number.isFinite(v) && v >= 0 && v < n ? v : d);
+    const f = clamp(Number(searchParams.get("pf")), 0);
+    const t = clamp(Number(searchParams.get("pt")), n - 1);
+    return f < t ? ([f, t] as [number, number]) : ([0, n - 1] as [number, number]);
+  }, [searchParams, hist.snaps.length]);
+  const setPeriod = (f: number, t: number) =>
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        if (f === 0 && t === hist.snaps.length - 1) {
+          next.delete("pf");
+          next.delete("pt");
+        } else {
+          next.set("pf", String(f));
+          next.set("pt", String(t));
+        }
+        return next;
+      },
+      { replace: true }
+    );
+
+  /* what each exchange did between the two chosen snapshots */
+  const moves = useMemo(() => {
+    const [f, t] = period;
+    const up: Array<{ r: PortHistoryRow; d: number }> = [];
+    const down: Array<{ r: PortHistoryRow; d: number }> = [];
+    const joined: Array<{ r: PortHistoryRow; d: number }> = [];
+    const left: Array<{ r: PortHistoryRow; d: number }> = [];
+    histRows.forEach((r) => {
+      const a = r.perSnapG[f];
+      const b = r.perSnapG[t];
+      const d = b - a;
+      if (a === 0 && b > 0) joined.push({ r, d: b });
+      else if (a > 0 && b === 0) left.push({ r, d: -a });
+      else if (d > 0.001) up.push({ r, d });
+      else if (d < -0.001) down.push({ r, d });
+    });
+    const bySize = (x: { d: number }, y: { d: number }) => Math.abs(y.d) - Math.abs(x.d);
+    return { up: up.sort(bySize), down: down.sort(bySize), joined: joined.sort(bySize), left: left.sort(bySize) };
+  }, [histRows, period]);
+  const periodNet = useMemo(
+    () => histTotals[period[1]] - histTotals[period[0]],
+    [histTotals, period]
+  );
+
   // movement counts for the metros actually in scope
   const histCounts = useMemo(() => {
     const c = { up: 0, down: 0, joined: 0, left: 0 };
@@ -391,9 +441,69 @@ export default function NetworkPage() {
       <div className="rd-sec-head">
         <h2>Capacity movement across exchanges — {scopeName}</h2>
         <span className="note rd-num">
-          ↑{histCounts.up} upgrades · ↓{histCounts.down} downgrades · +{histCounts.joined} ports added · −
-          {histCounts.left} dropped
+          whole window: ↑{histCounts.up} up · ↓{histCounts.down} down · +{histCounts.joined} added · −{histCounts.left} dropped
         </span>
+      </div>
+
+      {/* pick the period, then read what moved inside it */}
+      <div className="rd-slider-bar" style={{ alignItems: "center", gap: 16 }}>
+        <div className="rd-period" style={{ minWidth: 280, flex: 1, maxWidth: 460 }}>
+          <span className="rd-eyebrow">
+            Period · <b style={{ color: "var(--text)" }}>{histCols[period[0]]} → {histCols[period[1]]}</b>
+          </span>
+          <DualRange count={hist.snaps.length} from={period[0]} to={period[1]} onChange={setPeriod} />
+        </div>
+        <div className="rd-chips" style={{ marginBottom: 0 }}>
+          <button className="rd-chip" onClick={() => setPeriod(Math.max(0, hist.snaps.length - 2), hist.snaps.length - 1)}>
+            Last month
+          </button>
+          <button className="rd-chip" onClick={() => setPeriod(Math.max(0, hist.snaps.length - 4), hist.snaps.length - 1)}>
+            Last quarter
+          </button>
+          <button className="rd-chip" onClick={() => setPeriod(0, hist.snaps.length - 1)}>
+            All time
+          </button>
+        </div>
+        <div className="rd-grow" />
+        <div style={{ textAlign: "right" }}>
+          <div className="rd-eyebrow">Net over period</div>
+          <div className={`rd-num ${periodNet > 0.001 ? "rd-up" : periodNet < -0.001 ? "rd-down" : "rd-flat"}`} style={{ fontSize: 18, fontWeight: 700 }}>
+            {Math.abs(periodNet) < 0.001 ? "no change" : `${periodNet > 0 ? "+" : "−"}${gLbl(Math.abs(periodNet))}`}
+          </div>
+        </div>
+      </div>
+
+      <div className="rd-movegrid">
+        {([
+          ["Upgraded", moves.up, "up"],
+          ["Downgraded", moves.down, "down"],
+          ["Ports added", moves.joined, "join"],
+          ["Ports dropped", moves.left, "gone"],
+        ] as Array<[string, Array<{ r: PortHistoryRow; d: number }>, string]>).map(([label, list, kind]) => (
+          <div key={label} className={`rd-movecard ${kind}`}>
+            <div className="hd">
+              <span className="lb">{label}</span>
+              <span className="ct rd-num">{list.length}</span>
+            </div>
+            {list.length ? (
+              list.slice(0, 6).map(({ r, d }) => (
+                <Link key={r.ixId} to={{ pathname: `/exchange/${r.ixId}`, search }} className="row">
+                  <span className="nm" style={r.isEquinix ? { color: "var(--equinix)" } : undefined}>
+                    {r.ixName.length > 24 ? `${r.ixName.slice(0, 23)}…` : r.ixName}
+                  </span>
+                  <span className="mt">{r.metro}</span>
+                  <span className="dv rd-num">
+                    {d > 0 ? "+" : "−"}
+                    {gLbl(Math.abs(d))}
+                  </span>
+                </Link>
+              ))
+            ) : (
+              <div className="none">Nothing in this period</div>
+            )}
+            {list.length > 6 ? <div className="none">+{list.length - 6} more</div> : null}
+          </div>
+        ))}
       </div>
       <div className="rd-heatwrap">
         {histRows.length ? (
@@ -402,11 +512,11 @@ export default function NetworkPage() {
               <tr>
                 <th className="who">Exchange</th>
                 {hist.snaps.map((sd, i) => (
-                  <th key={sd} className="mo">
+                  <th key={sd} className={`mo${i >= period[0] && i <= period[1] ? " in" : " out"}`}>
                     {histCols[i]}
                   </th>
                 ))}
-                <th className="mo net">Net</th>
+                <th className="mo net">Δ period</th>
               </tr>
             </thead>
             <tbody>
@@ -439,7 +549,7 @@ export default function NetworkPage() {
                     return (
                       <td
                         key={i}
-                        className={`cell mv ${kind}`}
+                        className={`cell mv ${kind}${i >= period[0] && i <= period[1] ? "" : " out"}`}
                         title={`${histCols[i]} · ${gLbl(g)}${
                           i > 0 ? ` (was ${gLbl(prev)})` : ""
                         }`}
@@ -448,9 +558,14 @@ export default function NetworkPage() {
                       </td>
                     );
                   })}
-                  <td className={`cell mv net ${r.netChangeG > 0.001 ? "up" : r.netChangeG < -0.001 ? "down" : "same"}`}>
-                    {Math.abs(r.netChangeG) < 0.001 ? "·" : `${r.netChangeG > 0 ? "+" : "−"}${gLbl(Math.abs(r.netChangeG))}`}
-                  </td>
+                  {(() => {
+                    const d = r.perSnapG[period[1]] - r.perSnapG[period[0]];
+                    return (
+                      <td className={`cell mv net ${d > 0.001 ? "up" : d < -0.001 ? "down" : "same"}`}>
+                        {Math.abs(d) < 0.001 ? "·" : `${d > 0 ? "+" : "−"}${gLbl(Math.abs(d))}`}
+                      </td>
+                    );
+                  })()}
                 </tr>
               ))}
               <tr className="tot">
@@ -459,15 +574,12 @@ export default function NetworkPage() {
                   <span className="sub">{scopeName}</span>
                 </td>
                 {hist.snaps.map((_, i) => (
-                  <td key={i} className="cell mv same">
+                  <td key={i} className={`cell mv same${i >= period[0] && i <= period[1] ? "" : " out"}`}>
                     {gLbl(histTotals[i])}
                   </td>
                 ))}
-                <td className={`cell mv net ${histTotals[histTotals.length - 1] - histTotals[0] > 0 ? "up" : histTotals[histTotals.length - 1] - histTotals[0] < 0 ? "down" : "same"}`}>
-                  {(() => {
-                    const d = histTotals[histTotals.length - 1] - histTotals[0];
-                    return Math.abs(d) < 0.001 ? "·" : `${d > 0 ? "+" : "−"}${gLbl(Math.abs(d))}`;
-                  })()}
+                <td className={`cell mv net ${periodNet > 0.001 ? "up" : periodNet < -0.001 ? "down" : "same"}`}>
+                  {Math.abs(periodNet) < 0.001 ? "·" : `${periodNet > 0 ? "+" : "−"}${gLbl(Math.abs(periodNet))}`}
                 </td>
               </tr>
             </tbody>

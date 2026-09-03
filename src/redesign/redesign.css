@@ -1396,3 +1396,53 @@ a.rd-facchip.eqx:hover { color: var(--equinix); box-shadow: inset 0 0 0 1px var(
 .rd-amx.rd-move tr.tot td { border-top: 2px solid var(--border-strong); font-weight: 700; }
 .rd-amx.rd-move tr.tot td.who .nm { color: var(--text); }
 .rd-amx.rd-move td.who .sub { display: block; font-size: 10.5px; color: var(--faint); }
+
+/* ---------- per-period movement cards ---------- */
+.rd-movegrid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 14px; }
+.rd-movecard {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: var(--shadow);
+  overflow: hidden;
+  border-top: 3px solid var(--border-strong);
+}
+.rd-movecard.up { border-top-color: var(--present); }
+.rd-movecard.down { border-top-color: var(--gap); }
+.rd-movecard.join { border-top-color: var(--accent); }
+.rd-movecard.gone { border-top-color: var(--faint); }
+.rd-movecard .hd {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  padding: 9px 12px 7px;
+  border-bottom: 1px solid var(--border);
+}
+.rd-movecard .hd .lb { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
+.rd-movecard .hd .ct { font-size: 16px; font-weight: 700; color: var(--text); }
+.rd-movecard.up .hd .ct { color: var(--present); }
+.rd-movecard.down .hd .ct { color: var(--gap); }
+.rd-movecard .row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 2px 8px;
+  padding: 7px 12px;
+  border-bottom: 1px solid var(--border);
+  text-decoration: none;
+  color: var(--text);
+}
+.rd-movecard .row:last-child { border-bottom: 0; }
+.rd-movecard .row:hover { background: var(--surface-2); }
+.rd-movecard .row .nm { font-size: 12.5px; font-weight: 600; }
+.rd-movecard .row .mt { grid-column: 1; font-size: 10.5px; color: var(--faint); }
+.rd-movecard .row .dv { grid-row: 1 / span 2; align-self: center; font-size: 13px; font-weight: 700; }
+.rd-movecard.up .row .dv { color: var(--present); }
+.rd-movecard.down .row .dv, .rd-movecard.gone .row .dv { color: var(--gap); }
+.rd-movecard.join .row .dv { color: var(--accent); }
+.rd-movecard .none { padding: 9px 12px; font-size: 11.5px; color: var(--faint); }
+/* columns outside the chosen period recede */
+.rd-amx.rd-move th.mo.out { opacity: 0.4; }
+.rd-amx.compact td.cell.mv.out { opacity: 0.34; }
+@media (max-width: 1100px) {
+  .rd-movegrid { grid-template-columns: repeat(2, 1fr); }
+}
