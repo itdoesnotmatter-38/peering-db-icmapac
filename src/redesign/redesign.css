@@ -1353,3 +1353,46 @@ a.rd-facchip.eqx:hover { color: var(--equinix); box-shadow: inset 0 0 0 1px var(
   a { text-decoration: none !important; color: inherit !important; }
   .rd-footnote { color: #5a6e80 !important; font-size: 10px; }
 }
+
+/* ---------- per-network capacity movement over time ---------- */
+.rd-amx.rd-move th.mo {
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--faint);
+  text-align: center;
+  white-space: nowrap;
+  padding: 6px 4px;
+}
+.rd-amx.rd-move th.mo.net { color: var(--muted); }
+.rd-amx.compact td.cell.mv {
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 5px 6px;
+  min-width: 58px;
+  border-radius: 0;
+  color: var(--text);
+  background: var(--surface);
+}
+.rd-amx.compact td.cell.mv.none { color: var(--faint); font-weight: 400; background: var(--surface-2); }
+.rd-amx.compact td.cell.mv.same { background: var(--surface-2); }
+.rd-amx.compact td.cell.mv.up { background: var(--present-bg); color: var(--present); }
+.rd-amx.compact td.cell.mv.down { background: var(--gap-bg); color: var(--gap); }
+.rd-amx.compact td.cell.mv.join {
+  background: var(--present-bg);
+  color: var(--present);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--present) 45%, transparent);
+}
+.rd-amx.compact td.cell.mv.gone {
+  background: var(--gap-bg);
+  color: var(--gap);
+  font-size: 11px;
+  font-style: italic;
+  font-weight: 500;
+}
+.rd-amx.compact td.cell.mv.net { border-left: 2px solid var(--border-strong); font-weight: 700; }
+.rd-amx.rd-move tr.tot td { border-top: 2px solid var(--border-strong); font-weight: 700; }
+.rd-amx.rd-move tr.tot td.who .nm { color: var(--text); }
+.rd-amx.rd-move td.who .sub { display: block; font-size: 10.5px; color: var(--faint); }

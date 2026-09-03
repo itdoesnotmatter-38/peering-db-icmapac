@@ -2076,3 +2076,90 @@ export function allocationCsvRows(
   });
   return rows;
 }
+
+/* ---------------- per-network port history ----------------
+   How one network's capacity on each exchange moved across every snapshot —
+   upgrades, downgrades, ports joined and ports dropped. */
+
+export interface PortHistoryRow {
+  ixId: number;
+  ixName: string;
+  metro: string;
+  isEquinix: boolean;
+  /** capacity in Gbps at each snapshot; 0 means "not present that month" */
+  perSnapG: number[];
+  /** first present → latest, in Gbps */
+  netChangeG: number;
+  firstIdx: number;
+  lastIdx: number;
+  /** still on this exchange at the latest snapshot */
+  active: boolean;
+}
+
+export interface PortHistory {
+  snaps: string[];
+  rows: PortHistoryRow[];
+  /** the network's total capacity per snapshot, in Gbps */
+  totalsG: number[];
+  counts: { up: number; down: number; joined: number; left: number };
+}
+
+export function networkPortHistory(fd: TrendsResponse, asn: number, asOf?: string): PortHistory {
+  const snaps = uniqSorted(fd.snapshots).filter((s) => !asOf || s <= asOf);
+  const idx = new Map(snaps.map((s, i) => [s, i]));
+  const byIx = new Map<number, PortHistoryRow>();
+
+  for (const r of fd.networkIxTrend) {
+    if (r.asn !== asn) continue;
+    const si = idx.get(r.snapshotDate);
+    if (si === undefined) continue;
+    let row = byIx.get(r.ixId);
+    if (!row) {
+      row = {
+        ixId: r.ixId,
+        ixName: r.ixName,
+        metro: r.metro,
+        isEquinix: isEquinixIx(r.ixName),
+        perSnapG: new Array(snaps.length).fill(0),
+        netChangeG: 0,
+        firstIdx: -1,
+        lastIdx: -1,
+        active: false,
+      };
+      byIx.set(r.ixId, row);
+    }
+    row.perSnapG[si] += (r.capacityMbps || 0) / 1000;
+    row.ixName = r.ixName || row.ixName;
+    row.metro = r.metro || row.metro;
+  }
+
+  const li = snaps.length - 1;
+  const counts = { up: 0, down: 0, joined: 0, left: 0 };
+  const rows = Array.from(byIx.values());
+  rows.forEach((row) => {
+    row.firstIdx = row.perSnapG.findIndex((v) => v > 0);
+    for (let i = row.perSnapG.length - 1; i >= 0; i--) {
+      if (row.perSnapG[i] > 0) {
+        row.lastIdx = i;
+        break;
+      }
+    }
+    row.active = row.perSnapG[li] > 0;
+    row.netChangeG = row.firstIdx >= 0 ? row.perSnapG[li] - row.perSnapG[row.firstIdx] : 0;
+    // classify each month-on-month step across the window
+    for (let i = 1; i < row.perSnapG.length; i++) {
+      const a = row.perSnapG[i - 1];
+      const b = row.perSnapG[i];
+      if (a === 0 && b > 0) counts.joined += 1;
+      else if (a > 0 && b === 0) counts.left += 1;
+      else if (b > a + 0.001) counts.up += 1;
+      else if (b < a - 0.001) counts.down += 1;
+    }
+  });
+
+  const totalsG = snaps.map((_, i) => rows.reduce((acc, r) => acc + r.perSnapG[i], 0));
+  rows.sort(
+    (a, b) => Number(b.active) - Number(a.active) || b.perSnapG[li] - a.perSnapG[li] || Math.abs(b.netChangeG) - Math.abs(a.netChangeG)
+  );
+  return { snaps, rows, totalsG, counts };
+}

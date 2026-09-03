@@ -12,6 +12,7 @@ import {
   loadWatchlist,
   networkProfile,
   networksDirectory,
+  networkPortHistory,
   saveWatchlist,
   allocationCsvRows,
   saveCsv,
@@ -192,6 +193,39 @@ export default function NetworkPage() {
   );
   const totalScopedG = blocks.reduce((a, b) => a + b.totalG, 0);
 
+  /* per-exchange capacity history across every snapshot, scoped to the metro selection */
+  const hist = useMemo(() => networkPortHistory(data, p.asn, asOf), [data, p.asn, asOf]);
+  const scopedMetros = useMemo(() => new Set(derived.metros.map((m) => m.metro)), [derived.metros]);
+  const histRows = useMemo(() => hist.rows.filter((r) => scopedMetros.has(r.metro)), [hist.rows, scopedMetros]);
+  const histTotals = useMemo(
+    () => hist.snaps.map((_, i) => histRows.reduce((acc, r) => acc + r.perSnapG[i], 0)),
+    [hist.snaps, histRows]
+  );
+  const gLbl = (g: number) => (g >= 1000 ? `${(g / 1000).toFixed(1)}T` : g > 0 ? `${g.toFixed(0)}G` : "·");
+  /* two snapshots can land in the same month (e.g. 5 May and 31 May) — qualify
+     those headers with the day so the columns aren't both just "May" */
+  const histCols = useMemo(() => {
+    const month = (d: string) => fmtMonth(d);
+    const seen = new Map<string, number>();
+    hist.snaps.forEach((d) => seen.set(month(d), (seen.get(month(d)) || 0) + 1));
+    return hist.snaps.map((d) => (seen.get(month(d))! > 1 ? `${Number(d.slice(8, 10))} ${month(d)}` : month(d)));
+  }, [hist.snaps]);
+  // movement counts for the metros actually in scope
+  const histCounts = useMemo(() => {
+    const c = { up: 0, down: 0, joined: 0, left: 0 };
+    histRows.forEach((r) => {
+      for (let i = 1; i < r.perSnapG.length; i++) {
+        const a = r.perSnapG[i - 1];
+        const b = r.perSnapG[i];
+        if (a === 0 && b > 0) c.joined += 1;
+        else if (a > 0 && b === 0) c.left += 1;
+        else if (b > a + 0.001) c.up += 1;
+        else if (b < a - 0.001) c.down += 1;
+      }
+    });
+    return c;
+  }, [histRows]);
+
   if (!p.found) {
     return (
       <div className="rd-center">
@@ -351,6 +385,103 @@ export default function NetworkPage() {
             ) : null}
           </Panel>
         </div>
+      </div>
+
+      {/* per-exchange capacity movement across every snapshot */}
+      <div className="rd-sec-head">
+        <h2>Capacity movement across exchanges — {scopeName}</h2>
+        <span className="note rd-num">
+          ↑{histCounts.up} upgrades · ↓{histCounts.down} downgrades · +{histCounts.joined} ports added · −
+          {histCounts.left} dropped
+        </span>
+      </div>
+      <div className="rd-heatwrap">
+        {histRows.length ? (
+          <table className="rd-amx compact rd-move">
+            <thead>
+              <tr>
+                <th className="who">Exchange</th>
+                {hist.snaps.map((sd, i) => (
+                  <th key={sd} className="mo">
+                    {histCols[i]}
+                  </th>
+                ))}
+                <th className="mo net">Net</th>
+              </tr>
+            </thead>
+            <tbody>
+              {histRows.map((r) => (
+                <tr key={r.ixId}>
+                  <td className="who">
+                    <Link to={{ pathname: `/exchange/${r.ixId}`, search }} className="nm rd-netlink" style={r.isEquinix ? { color: "var(--equinix)" } : undefined}>
+                      {r.ixName.length > 26 ? `${r.ixName.slice(0, 25)}…` : r.ixName}
+                    </Link>
+                    <span className="sub">{r.metro}</span>
+                  </td>
+                  {r.perSnapG.map((g, i) => {
+                    const prev = i > 0 ? r.perSnapG[i - 1] : 0;
+                    const kind =
+                      i === 0
+                        ? g > 0
+                          ? "same"
+                          : "none"
+                        : prev === 0 && g > 0
+                        ? "join"
+                        : prev > 0 && g === 0
+                        ? "gone"
+                        : g > prev + 0.001
+                        ? "up"
+                        : g < prev - 0.001
+                        ? "down"
+                        : g > 0
+                        ? "same"
+                        : "none";
+                    return (
+                      <td
+                        key={i}
+                        className={`cell mv ${kind}`}
+                        title={`${histCols[i]} · ${gLbl(g)}${
+                          i > 0 ? ` (was ${gLbl(prev)})` : ""
+                        }`}
+                      >
+                        {g > 0 ? gLbl(g) : kind === "gone" ? "left" : "·"}
+                      </td>
+                    );
+                  })}
+                  <td className={`cell mv net ${r.netChangeG > 0.001 ? "up" : r.netChangeG < -0.001 ? "down" : "same"}`}>
+                    {Math.abs(r.netChangeG) < 0.001 ? "·" : `${r.netChangeG > 0 ? "+" : "−"}${gLbl(Math.abs(r.netChangeG))}`}
+                  </td>
+                </tr>
+              ))}
+              <tr className="tot">
+                <td className="who">
+                  <span className="nm">All exchanges</span>
+                  <span className="sub">{scopeName}</span>
+                </td>
+                {hist.snaps.map((_, i) => (
+                  <td key={i} className="cell mv same">
+                    {gLbl(histTotals[i])}
+                  </td>
+                ))}
+                <td className={`cell mv net ${histTotals[histTotals.length - 1] - histTotals[0] > 0 ? "up" : histTotals[histTotals.length - 1] - histTotals[0] < 0 ? "down" : "same"}`}>
+                  {(() => {
+                    const d = histTotals[histTotals.length - 1] - histTotals[0];
+                    return Math.abs(d) < 0.001 ? "·" : `${d > 0 ? "+" : "−"}${gLbl(Math.abs(d))}`;
+                  })()}
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        ) : (
+          <div style={{ padding: "16px 12px", color: "var(--muted)", fontSize: 13 }}>
+            No exchange ports for {p.name} in {scopeName}.
+          </div>
+        )}
+      </div>
+      <div className="rd-footnote" style={{ marginBottom: 22 }}>
+        Each column is a monthly snapshot; the cell is the capacity {p.name} had on that exchange. Green means it went up
+        from the month before, red down, <b>join</b> marks a port appearing for the first time and <b>left</b> a port that
+        disappeared. <b>Net</b> is the change from its first appearance to now. Hover a cell for the previous month's value.
       </div>
 
       {/* comparator picker — drives BOTH the exchange and data-centre sections */}
