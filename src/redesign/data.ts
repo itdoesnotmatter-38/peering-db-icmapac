@@ -179,7 +179,18 @@ export const fmtDate = (iso: string) => {
   const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
   return `${d} ${months[(m || 1) - 1]} ${y}`;
 };
+/** Snapshots whose month label differs from their date, because the month-end
+    run was missed and a later backstop stands in for it. 2026-05-05 was
+    captured on 5 May and is the April month-end that never ran, so it reads
+    "Apr" on every month axis; its true date still shows wherever a full date
+    is displayed (snapshot slider, Downloads, tooltips). */
+export const SNAPSHOT_MONTH_LABEL: Record<string, string> = {
+  "2026-05-05": "Apr",
+};
+
 export const fmtMonth = (iso: string) => {
+  const override = SNAPSHOT_MONTH_LABEL[iso];
+  if (override) return override;
   const m = Number(iso.split("-")[1] || 1);
   return ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][m - 1];
 };

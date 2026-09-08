@@ -550,7 +550,7 @@ export default function NetworkPage() {
                       <td
                         key={i}
                         className={`cell mv ${kind}${i >= period[0] && i <= period[1] ? "" : " out"}`}
-                        title={`${histCols[i]} · ${gLbl(g)}${
+                        title={`${histCols[i]} (snapshot ${hist.snaps[i]}) · ${gLbl(g)}${
                           i > 0 ? ` (was ${gLbl(prev)})` : ""
                         }`}
                       >
@@ -593,7 +593,7 @@ export default function NetworkPage() {
       <div className="rd-footnote" style={{ marginBottom: 22 }}>
         Each column is a monthly snapshot; the cell is the capacity {p.name} had on that exchange. Green means it went up
         from the month before, red down, <b>join</b> marks a port appearing for the first time and <b>left</b> a port that
-        disappeared. <b>Net</b> is the change from its first appearance to now. Hover a cell for the previous month's value.
+        disappeared. <b>Net</b> is the change from its first appearance to now. Hover a cell for the snapshot date and the previous month's value. April's month-end run was missed, so the 5 May capture stands in for it and is labelled <b>Apr</b>.
       </div>
 
       {/* comparator picker — drives BOTH the exchange and data-centre sections */}
