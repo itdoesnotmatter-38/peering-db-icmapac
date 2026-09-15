@@ -13,6 +13,7 @@ import {
   networkProfile,
   networksDirectory,
   networkPortHistory,
+  networkFacilityHistory,
   PortHistoryRow,
   saveWatchlist,
   allocationCsvRows,
@@ -259,6 +260,19 @@ export default function NetworkPage() {
     () => histTotals[period[1]] - histTotals[period[0]],
     [histTotals, period]
   );
+
+  /* data-centre presence history (snapshot-based, presence only), same scope + period */
+  const facHist = useMemo(() => networkFacilityHistory(data, p.asn, asOf), [data, p.asn, asOf]);
+  const facHistRows = useMemo(() => facHist.rows.filter((r) => scopedMetros.has(r.metro)), [facHist.rows, scopedMetros]);
+  const facMoves = useMemo(() => {
+    const [f, t] = period;
+    return {
+      added: facHistRows.filter((r) => !r.present[f] && r.present[t]),
+      exited: facHistRows.filter((r) => r.present[f] && !r.present[t]),
+      atFrom: facHistRows.filter((r) => r.present[f]).length,
+      atTo: facHistRows.filter((r) => r.present[t]).length,
+    };
+  }, [facHistRows, period]);
 
   // movement counts for the metros actually in scope
   const histCounts = useMemo(() => {
@@ -595,6 +609,153 @@ export default function NetworkPage() {
         from the month before, red down, <b>join</b> marks a port appearing for the first time and <b>left</b> a port that
         disappeared. <b>Net</b> is the change from its first appearance to now. Hover a cell for the snapshot date and the previous month's value. April's month-end run was missed, so the 5 May capture stands in for it and is labelled <b>Apr</b>.
       </div>
+
+      {/* data-centre movement — presence only, follows the same period */}
+      <div className="rd-sec-head">
+        <h2>Data-centre movement — {scopeName}</h2>
+        <span className="note">
+          Snapshot-based · {histCols[period[0]]} → {histCols[period[1]]} · presence only
+        </span>
+      </div>
+      {!facHist.available ? (
+        <div className="rd-footnote" style={{ marginBottom: 22 }}>
+          Data-centre history isn't in the loaded data yet — refresh in a few minutes.
+        </div>
+      ) : (
+        <>
+          <div className="rd-movegrid">
+            {([
+              ["Data centres added", facMoves.added, "join"],
+              ["Data centres exited", facMoves.exited, "gone"],
+            ] as Array<[string, typeof facHistRows, string]>).map(([label, list, kind]) => (
+              <div key={label} className={`rd-movecard ${kind}`}>
+                <div className="hd">
+                  <span className="lb">{label}</span>
+                  <span className="ct rd-num">{list.length}</span>
+                </div>
+                {list.length ? (
+                  list.slice(0, 6).map((r) => (
+                    <Link key={r.facilityId} to={{ pathname: `/fac/${r.facilityId}`, search }} className="row">
+                      <span className="nm" style={r.isEquinix ? { color: "var(--equinix)" } : undefined}>
+                        {r.name.length > 26 ? `${r.name.slice(0, 25)}…` : r.name}
+                      </span>
+                      <span className="mt">{r.metro}</span>
+                      <span className="dv">{kind === "join" ? "added" : "exited"}</span>
+                    </Link>
+                  ))
+                ) : (
+                  <div className="none">Nothing in this period</div>
+                )}
+                {list.length > 6 ? <div className="none">+{list.length - 6} more</div> : null}
+              </div>
+            ))}
+            <div className="rd-movecard">
+              <div className="hd">
+                <span className="lb">Data centres</span>
+                <span className="ct rd-num">{facMoves.atTo}</span>
+              </div>
+              <div className="none" style={{ fontSize: 12.5, color: "var(--muted)" }}>
+                {facMoves.atFrom} at {histCols[period[0]]} → <b style={{ color: "var(--text)" }}>{facMoves.atTo}</b> at{" "}
+                {histCols[period[1]]}
+                {facMoves.atTo !== facMoves.atFrom ? (
+                  <span className={facMoves.atTo > facMoves.atFrom ? "rd-up" : "rd-down"}>
+                    {" "}
+                    ({facMoves.atTo > facMoves.atFrom ? "+" : "−"}
+                    {Math.abs(facMoves.atTo - facMoves.atFrom)})
+                  </span>
+                ) : null}
+              </div>
+            </div>
+          </div>
+
+          <div className="rd-heatwrap">
+            {facHistRows.length ? (
+              <table className="rd-amx compact rd-move">
+                <thead>
+                  <tr>
+                    <th className="who">Data centre</th>
+                    {facHist.snaps.map((sd, i) => (
+                      <th key={sd} className={`mo${i >= period[0] && i <= period[1] ? " in" : " out"}`}>
+                        {histCols[i]}
+                      </th>
+                    ))}
+                    <th className="mo net">Δ period</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {facHistRows.map((r) => {
+                    const a = r.present[period[0]];
+                    const b = r.present[period[1]];
+                    return (
+                      <tr key={r.facilityId}>
+                        <td className="who">
+                          <Link
+                            to={{ pathname: `/fac/${r.facilityId}`, search }}
+                            className="nm rd-netlink"
+                            style={r.isEquinix ? { color: "var(--equinix)" } : undefined}
+                          >
+                            {r.name.length > 28 ? `${r.name.slice(0, 27)}…` : r.name}
+                          </Link>
+                          <span className="sub">
+                            {r.metro}
+                            {r.isEquinix ? "" : r.org ? ` · ${r.org.length > 22 ? `${r.org.slice(0, 21)}…` : r.org}` : ""}
+                          </span>
+                        </td>
+                        {r.present.map((on, i) => {
+                          const prev = i > 0 ? r.present[i - 1] : on;
+                          const kind = on ? (i > 0 && !prev ? "join" : "same") : i > 0 && prev ? "gone" : "none";
+                          return (
+                            <td
+                              key={i}
+                              className={`cell mv ${kind}${i >= period[0] && i <= period[1] ? "" : " out"}`}
+                              title={`${histCols[i]} (snapshot ${facHist.snaps[i]}) · ${on ? "listed" : "not listed"}`}
+                            >
+                              {on ? "✓" : kind === "gone" ? "left" : "·"}
+                            </td>
+                          );
+                        })}
+                        <td className={`cell mv net ${!a && b ? "up" : a && !b ? "down" : "same"}`}>
+                          {!a && b ? "added" : a && !b ? "exited" : "·"}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                  <tr className="tot">
+                    <td className="who">
+                      <span className="nm">Data centres listed</span>
+                      <span className="sub">{scopeName}</span>
+                    </td>
+                    {facHist.snaps.map((_, i) => (
+                      <td key={i} className={`cell mv same${i >= period[0] && i <= period[1] ? "" : " out"}`}>
+                        {facHistRows.filter((r) => r.present[i]).length}
+                      </td>
+                    ))}
+                    <td
+                      className={`cell mv net ${
+                        facMoves.atTo > facMoves.atFrom ? "up" : facMoves.atTo < facMoves.atFrom ? "down" : "same"
+                      }`}
+                    >
+                      {facMoves.atTo === facMoves.atFrom
+                        ? "·"
+                        : `${facMoves.atTo > facMoves.atFrom ? "+" : "−"}${Math.abs(facMoves.atTo - facMoves.atFrom)}`}
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            ) : (
+              <div style={{ padding: "16px 12px", color: "var(--muted)", fontSize: 13 }}>
+                {p.name} isn't listed in any data centre in {scopeName} across the stored snapshots.
+              </div>
+            )}
+          </div>
+          <div className="rd-footnote" style={{ marginBottom: 22 }}>
+            Each column is a monthly snapshot; ✓ means {p.name} was listed in that data centre. An outlined ✓ marks the
+            month it first appeared and <b>left</b> the month it disappeared. PeeringDB records no capacity at facilities,
+            so this tracks presence only — there's no upgrade or downgrade here. It's built from the stored snapshots,
+            unlike the live data-centre matrix further down, and uses the same period as the exchange view above.
+          </div>
+        </>
+      )}
 
       {/* comparator picker — drives BOTH the exchange and data-centre sections */}
       <div className="rd-slider-bar" style={{ alignItems: "flex-start", gap: 14 }}>

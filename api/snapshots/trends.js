@@ -111,6 +111,7 @@ const buildSnapshotTrends = ({ snapshotDate, ixRows, facRows, netixlanRows, netf
   const facilityTrendByKey = new Map();
   const networkTrendByKey = new Map();
   const networkIxTrendByKey = new Map();
+  const networkFacilityPairs = new Set();
 
   APAC_METROS.forEach((metro) => {
     metroTrendByKey.set(metro.key, {
@@ -223,6 +224,9 @@ const buildSnapshotTrends = ({ snapshotDate, ixRows, facRows, netixlanRows, netf
       networkIds: new Set(),
     }));
     facilityTrend.networkIds.add(row.net_id);
+
+    const asn = net.asn || row.local_asn;
+    if (asn) networkFacilityPairs.add(`${asn}|${row.fac_id}`);
   });
 
   return {
@@ -265,6 +269,7 @@ const buildSnapshotTrends = ({ snapshotDate, ixRows, facRows, netixlanRows, netf
       facilityCount: row.facilityIds.size,
       presenceType: row.ixIds.size > 0 && row.facilityIds.size > 0 ? "both" : row.ixIds.size > 0 ? "ix" : "facility",
     })),
+    networkFacilityPairs: Array.from(networkFacilityPairs),
     networkIxTrend: Array.from(networkIxTrendByKey.values()).map((row) => ({
       snapshotDate: row.snapshotDate,
       metro: row.metro,
@@ -277,6 +282,22 @@ const buildSnapshotTrends = ({ snapshotDate, ixRows, facRows, netixlanRows, netf
     })),
   };
 };
+
+/* Per-network facility presence across snapshots, encoded compactly. Facility
+   presence has no capacity — it is only present/absent — so rather than one
+   verbose row per snapshot (which would add ~11 MB to this feed) each unique
+   network×facility pair is one [asn, facilityId, mask] triple, where bit i of
+   mask means "present in snapshots[i]". */
+const accumulateFacilityPresence = (presence, pairs, snapshotIndex) => {
+  const bit = 1 << snapshotIndex;
+  pairs.forEach((key) => presence.set(key, (presence.get(key) || 0) | bit));
+};
+
+const facilityPresenceRows = (presence) =>
+  Array.from(presence, ([key, mask]) => {
+    const [asn, facilityId] = key.split("|").map(Number);
+    return [asn, facilityId, mask];
+  });
 
 module.exports = async (req, res) => {
   const limit = Number.parseInt(String(req.query?.limit || "12"), 10);
@@ -302,6 +323,7 @@ module.exports = async (req, res) => {
     };
     const usableSnapshots = [];
     const skippedSnapshots = [];
+    const facilityPresence = new Map();
 
     for (const run of completeRuns) {
       const manifest = await fetchJson(run.manifestUrl);
@@ -336,6 +358,8 @@ module.exports = async (req, res) => {
       aggregated.facilityTrend.push(...trends.facilityTrend);
       aggregated.networkTrend.push(...trends.networkTrend);
       aggregated.networkIxTrend.push(...trends.networkIxTrend);
+      // bit index must match this snapshot's position in `snapshots`
+      accumulateFacilityPresence(facilityPresence, trends.networkFacilityPairs, usableSnapshots.length);
       usableSnapshots.push(run.snapshotDate);
     }
 
@@ -346,9 +370,15 @@ module.exports = async (req, res) => {
       snapshots: usableSnapshots,
       skippedSnapshots,
       ...aggregated,
+      networkFacility: facilityPresenceRows(facilityPresence),
     });
   } catch (err) {
     console.error("Failed to build snapshot trends", err);
     res.status(500).json({ error: err?.message || "Failed to build snapshot trends" });
   }
 };
+
+// exposed for offline verification against stored snapshot files
+module.exports.buildSnapshotTrends = buildSnapshotTrends;
+module.exports.accumulateFacilityPresence = accumulateFacilityPresence;
+module.exports.facilityPresenceRows = facilityPresenceRows;

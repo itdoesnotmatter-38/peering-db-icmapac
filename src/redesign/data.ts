@@ -71,6 +71,10 @@ export interface TrendsResponse {
   facilityTrend: FacilityTrendRow[];
   networkTrend: NetworkTrendRow[];
   networkIxTrend: NetworkIxTrendRow[];
+  /** Per-network facility presence across snapshots: [asn, facilityId, mask],
+      bit i of mask = present in snapshots[i]. Optional — absent from feeds
+      built before it existed. */
+  networkFacility?: Array<[number, number, number]>;
 }
 
 /* ---------------- fetch + module cache ---------------- */
@@ -2173,4 +2177,64 @@ export function networkPortHistory(fd: TrendsResponse, asn: number, asOf?: strin
     (a, b) => Number(b.active) - Number(a.active) || b.perSnapG[li] - a.perSnapG[li] || Math.abs(b.netChangeG) - Math.abs(a.netChangeG)
   );
   return { snaps, rows, totalsG, counts };
+}
+
+/* ---------------- per-network facility history ----------------
+   Which data centres a network was listed in at each snapshot. Presence only:
+   PeeringDB records no capacity at facilities, so there is no upgrade or
+   downgrade here — a network is either in a facility that month or it isn't. */
+
+export interface FacilityHistoryRow {
+  facilityId: number;
+  name: string;
+  org: string;
+  metro: string;
+  isEquinix: boolean;
+  /** present at each snapshot, aligned to FacilityHistory.snaps */
+  present: boolean[];
+}
+
+export interface FacilityHistory {
+  /** false when the loaded feed predates facility history */
+  available: boolean;
+  snaps: string[];
+  rows: FacilityHistoryRow[];
+}
+
+export function networkFacilityHistory(fd: TrendsResponse, asn: number, asOf?: string): FacilityHistory {
+  const snaps = uniqSorted(fd.snapshots).filter((s) => !asOf || s <= asOf);
+  if (!fd.networkFacility) return { available: false, snaps, rows: [] };
+
+  // mask bits index the feed's own snapshot order; realign to the sorted window
+  const bitFor = snaps.map((s) => fd.snapshots.indexOf(s));
+  const meta = new Map<number, FacilityTrendRow>();
+  fd.facilityTrend.forEach((r) => {
+    const cur = meta.get(r.facilityId);
+    if (!cur || r.snapshotDate > cur.snapshotDate) meta.set(r.facilityId, r);
+  });
+
+  const rows: FacilityHistoryRow[] = [];
+  for (const [a, facilityId, mask] of fd.networkFacility) {
+    if (a !== asn) continue;
+    const present = bitFor.map((b) => b >= 0 && (mask & (1 << b)) !== 0);
+    if (!present.some(Boolean)) continue;
+    const m = meta.get(facilityId);
+    rows.push({
+      facilityId,
+      name: m?.facilityName || `Facility ${facilityId}`,
+      org: m?.facilityOrgName || "",
+      metro: m?.metro || "",
+      isEquinix: isEquinixFacilityOrg(m?.facilityOrgName),
+      present,
+    });
+  }
+  const li = snaps.length - 1;
+  rows.sort(
+    (x, y) =>
+      Number(y.present[li]) - Number(x.present[li]) ||
+      x.metro.localeCompare(y.metro) ||
+      Number(y.isEquinix) - Number(x.isEquinix) ||
+      x.name.localeCompare(y.name)
+  );
+  return { available: true, snaps, rows };
 }
