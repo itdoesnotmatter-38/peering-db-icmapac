@@ -623,7 +623,7 @@ export default function NetworkPage() {
         </div>
       ) : (
         <>
-          <div className="rd-movegrid">
+          <div className="rd-movegrid three">
             {([
               ["Data centres added", facMoves.added, "join"],
               ["Data centres exited", facMoves.exited, "gone"],

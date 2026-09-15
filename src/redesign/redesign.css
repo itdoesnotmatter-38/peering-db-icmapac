@@ -1433,9 +1433,12 @@ a.rd-facchip.eqx:hover { color: var(--equinix); box-shadow: inset 0 0 0 1px var(
 }
 .rd-movecard .row:last-child { border-bottom: 0; }
 .rd-movecard .row:hover { background: var(--surface-2); }
-.rd-movecard .row .nm { font-size: 12.5px; font-weight: 600; }
-.rd-movecard .row .mt { grid-column: 1; font-size: 10.5px; color: var(--faint); }
-.rd-movecard .row .dv { grid-row: 1 / span 2; align-self: center; font-size: 13px; font-weight: 700; }
+/* explicit placement: a row-pinned cell is auto-placed before unplaced ones,
+   which pushed the value into column 1 and the name to the right */
+.rd-movecard .row .nm { grid-column: 1; grid-row: 1; font-size: 12.5px; font-weight: 600; }
+.rd-movecard .row .mt { grid-column: 1; grid-row: 2; font-size: 10.5px; color: var(--faint); }
+.rd-movecard .row .dv { grid-column: 2; grid-row: 1 / span 2; align-self: center; text-align: right; font-size: 13px; font-weight: 700; }
+.rd-movegrid.three { grid-template-columns: repeat(3, 1fr); }
 .rd-movecard.up .row .dv { color: var(--present); }
 .rd-movecard.down .row .dv, .rd-movecard.gone .row .dv { color: var(--gap); }
 .rd-movecard.join .row .dv { color: var(--accent); }
