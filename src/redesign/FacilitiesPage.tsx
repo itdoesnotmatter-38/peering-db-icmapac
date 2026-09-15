@@ -2,20 +2,19 @@ import React, { useEffect, useMemo, useState } from "react";
 import { Link, useLocation, useSearchParams } from "react-router-dom";
 import { fetchPeeringDb } from "../peeringdbApi";
 import { useSnapshot } from "./Shell";
-import { EntityTypeahead, Panel, Sparkline } from "./bits";
-import { FacilityDirEntry, METRO_CODES, facilitiesDirectory, fmtMonth, networksDirectory, tokenMatch } from "./data";
+import { EntityTypeahead, Panel, PeriodBar, Sparkline } from "./bits";
+import { FacilityDirEntry, METRO_CODES, facilitiesDirectory, facilityTraction, fmtMonth, networksDirectory, tokenMatch } from "./data";
+import { usePeriod } from "./usePeriod";
 
 /* Facilities directory — the data-centre twin of the Exchanges directory:
    every DC in scope with its operator, network count, trend and metro rank.
    Tick several and the compare matrix shows which networks sit in each,
    so you can read one network's presence across facilities at a glance. */
 
-type SortKey = "nets" | "dnets" | "dnetsq" | "share" | "rank";
-const GRID = "26px minmax(200px,1fr) 132px 96px 56px 64px 64px 66px 60px";
+type SortKey = "nets" | "joined" | "left" | "share" | "rank";
+const GRID = "26px minmax(200px,1fr) 128px 92px 54px 62px 58px 52px 64px 50px";
 const MAX_COMPARE = 12;
 
-const dLbl = (n: number) => (n === 0 ? "·" : `${n > 0 ? "+" : "−"}${Math.abs(n)}`);
-const cls = (n: number) => (n > 0 ? "rd-up" : n < 0 ? "rd-down" : "rd-flat");
 
 interface Member {
   asn: number;
@@ -24,7 +23,7 @@ interface Member {
 }
 
 export default function FacilitiesPage() {
-  const { data, scoped, derived, scopeName } = useSnapshot();
+  const { data, scoped, derived, scopeName, asOf } = useSnapshot();
   const { latest } = derived;
   const { search } = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -151,20 +150,31 @@ export default function FacilitiesPage() {
     [all]
   );
 
+  /* who joined / left each data centre over a chosen period — opens on the latest month */
+  const snapsWin = useMemo(() => Array.from(new Set(scoped.snapshots)).sort().filter((d) => d <= asOf), [scoped.snapshots, asOf]);
+  const period = usePeriod(snapsWin.length, "last");
+  const traction = useMemo(() => facilityTraction(scoped, period.from, period.to, asOf), [scoped, period.from, period.to, asOf]);
+  const periodLabels = snapsWin.map((d) => fmtMonth(d));
+  const tr = (id: number) => traction.byFacility.get(id);
+  const namesTip = (list: Array<{ name: string }>) =>
+    list.length ? list.slice(0, 15).map((x) => x.name).join(", ") + (list.length > 15 ? ` +${list.length - 15} more` : "") : "";
+  const [showAllExpanding, setShowAllExpanding] = useState(false);
+
   const filtered = useMemo(() => {
     const base = q.trim() ? all.filter((f) => tokenMatch(q, `${f.name} ${f.org} ${f.metro}`, f.facilityId)) : all;
     const val = (f: FacilityDirEntry) =>
       sort.key === "nets"
         ? f.nets
-        : sort.key === "dnets"
-        ? f.dNets
-        : sort.key === "dnetsq"
-        ? f.dNetsQ
+        : sort.key === "joined"
+        ? tr(f.facilityId)?.joined.length || 0
+        : sort.key === "left"
+        ? tr(f.facilityId)?.left.length || 0
         : sort.key === "share"
         ? f.metroSharePct
         : -f.metroRank;
     return [...base].sort((a, b) => (sort.asc ? val(a) - val(b) : val(b) - val(a)));
-  }, [all, q, sort]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [all, q, sort, traction]);
 
   const Head = ({ k, label }: { k: SortKey; label: string }) => (
     <button className={`sort${sort.key === k ? " on" : ""}`} onClick={() => setSort((s) => ({ key: k, asc: s.key === k ? !s.asc : false }))}>
@@ -318,6 +328,66 @@ export default function FacilitiesPage() {
         </div>
       ) : null}
 
+      {/* ---- traction: who joined and left, over the chosen period ---- */}
+      <div className="rd-sec-head">
+        <h2>Data-centre traction</h2>
+        <span className="note">Snapshot-based · networks joining and leaving each data centre</span>
+      </div>
+      {!traction.available ? (
+        <div className="rd-footnote">Traction history isn't in the loaded data yet — refresh in a few minutes.</div>
+      ) : snapsWin.length < 2 ? null : (
+        <>
+          <PeriodBar
+            labels={periodLabels}
+            from={period.from}
+            to={period.to}
+            onChange={period.set}
+            presets={[
+              { label: "Last month", onClick: period.lastMonth, active: period.from === snapsWin.length - 2 && period.to === snapsWin.length - 1 },
+              { label: "Last quarter", onClick: period.lastQuarter },
+              { label: "All time", onClick: period.allTime },
+            ]}
+          >
+            <span className="note rd-num">
+              {Array.from(traction.byFacility.values()).reduce((a, r) => a + r.joined.length, 0).toLocaleString()} joins ·{" "}
+              {Array.from(traction.byFacility.values()).reduce((a, r) => a + r.left.length, 0).toLocaleString()} exits · {scopeName}
+            </span>
+          </PeriodBar>
+          <Panel title={`Networks expanding into new data centres · ${periodLabels[period.from]} → ${periodLabels[period.to]}`} tag={`${traction.expanding.length} networks`}>
+            {traction.expanding.length ? (
+              (showAllExpanding ? traction.expanding.slice(0, 40) : traction.expanding.slice(0, 8)).map((n) => (
+                <div key={n.asn} className="rd-expandrow">
+                  <Link to={{ pathname: `/net/${n.asn}`, search }} className="nm rd-netlink">
+                    {n.name.length > 30 ? `${n.name.slice(0, 29)}…` : n.name}
+                    <span className="rd-cc" style={{ marginLeft: 6 }}>
+                      AS{n.asn}
+                    </span>
+                  </Link>
+                  <span className="ct rd-num rd-up">+{n.joined.length}</span>
+                  <span className="facs">
+                    {n.joined.slice(0, 4).map((f) => (
+                      <Link key={f.facilityId} to={{ pathname: `/fac/${f.facilityId}`, search }} className={`rd-facchip${f.isEquinix ? " eqx" : ""}`} title={`${f.name} · ${f.metro}`}>
+                        {f.name.length > 22 ? `${f.name.slice(0, 21)}…` : f.name}
+                      </Link>
+                    ))}
+                    {n.joined.length > 4 ? <span className="more">+{n.joined.length - 4}</span> : null}
+                    {n.left.length ? <span className="rd-down more">left {n.left.length}</span> : null}
+                  </span>
+                </div>
+              ))
+            ) : (
+              <div style={{ padding: "14px 12px", color: "var(--muted)", fontSize: 13 }}>No network entered a new data centre in this period.</div>
+            )}
+            {traction.expanding.length > 8 ? (
+              <button className="rd-linkbtn" style={{ padding: "9px 12px", fontSize: 12 }} onClick={() => setShowAllExpanding((v) => !v)}>
+                {showAllExpanding ? "show fewer" : `show more (${Math.min(40, traction.expanding.length)})`}
+              </button>
+            ) : null}
+          </Panel>
+          <div style={{ height: 14 }} />
+        </>
+      )}
+
       <Panel title={q ? "Search results" : "Data centres by network presence"} tag={fmtMonth(latest)}>
         <div className="rd-dirhead" style={{ gridTemplateColumns: GRID }}>
           <span />
@@ -329,7 +399,10 @@ export default function FacilitiesPage() {
             <Head k="nets" label="Networks" />
           </span>
           <span className="c">
-            <Head k="dnets" label="Δ MoM" />
+            <Head k="joined" label="Joined" />
+          </span>
+          <span className="c">
+            <Head k="left" label="Left" />
           </span>
           <span className="c">
             <Head k="share" label="Metro share" />
@@ -362,9 +435,21 @@ export default function FacilitiesPage() {
               </span>
               <span className="spk">{f.nets > 0 ? <Sparkline points={f.spark} width={50} height={20} /> : null}</span>
               <span className="pv rd-num">{f.nets.toLocaleString()}</span>
-              <span className={`pv rd-num ${cls(f.dNets)}`} title={`QoQ ${dLbl(f.dNetsQ)}`}>
-                {dLbl(f.dNets)}
-              </span>
+              {(() => {
+                const t = tr(f.facilityId);
+                const j = t?.joined.length || 0;
+                const l = t?.left.length || 0;
+                return (
+                  <>
+                    <span className={`pv rd-num ${j ? "rd-up" : "rd-flat"}`} title={j ? `Joined: ${namesTip(t!.joined)}` : undefined}>
+                      {j ? `+${j}` : "·"}
+                    </span>
+                    <span className={`pv rd-num ${l ? "rd-down" : "rd-flat"}`} title={l ? `Left: ${namesTip(t!.left)}` : undefined}>
+                      {l ? `−${l}` : "·"}
+                    </span>
+                  </>
+                );
+              })()}
               <span className="pv rd-num">{f.metroSharePct.toFixed(1)}%</span>
               <span className="meta rd-num">#{f.metroRank}</span>
             </div>
@@ -380,8 +465,9 @@ export default function FacilitiesPage() {
       <div className="rd-footnote">
         Tick the <b>+</b> on up to {MAX_COMPARE} data centres to compare who's racked where — the matrix above shows each
         network against the selected facilities, so you can see at a glance who is in one and not the other. Click a
-        column to sort; a name for the data-centre profile. Network counts, trend and metro rank are snapshot-based
-        ({fmtMonth(latest)}); the comparison membership is fetched live from PeeringDB.
+        column to sort; a name for the data-centre profile. <b>Joined</b> and <b>Left</b> count networks that entered or
+        exited each data centre over the traction period above (hover for names). Network counts, trend, traction and
+        metro rank are snapshot-based ({fmtMonth(latest)}); the comparison membership is fetched live from PeeringDB.
       </div>
     </>
   );

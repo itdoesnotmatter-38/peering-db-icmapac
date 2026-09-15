@@ -2238,3 +2238,152 @@ export function networkFacilityHistory(fd: TrendsResponse, asn: number, asOf?: s
   );
   return { available: true, snaps, rows };
 }
+
+/* ---------------- data-centre traction: joins and exits ----------------
+   Built from networkFacility. Pass the scope-filtered dataset to scope it:
+   facilities outside the scoped facilityTrend are skipped. Periods are
+   indices into the sorted snapshot window (same as the network profile). */
+
+const presenceWindow = (fd: TrendsResponse, asOf?: string) => {
+  const snaps = uniqSorted(fd.snapshots).filter((s) => !asOf || s <= asOf);
+  return { snaps, bitFor: snaps.map((s) => fd.snapshots.indexOf(s)) };
+};
+
+const hasBit = (mask: number, bit: number) => bit >= 0 && (mask & (1 << bit)) !== 0;
+
+/** Latest row per facility across every snapshot — unlike facilityMeta(), a
+    facility missing from the newest snapshot still resolves, which exits need. */
+const latestFacilityRows = (fd: TrendsResponse) => {
+  const meta = new Map<number, FacilityTrendRow>();
+  fd.facilityTrend.forEach((r) => {
+    const cur = meta.get(r.facilityId);
+    if (!cur || r.snapshotDate > cur.snapshotDate) meta.set(r.facilityId, r);
+  });
+  return meta;
+};
+
+/** Latest network name by ASN. */
+export function networkNames(fd: TrendsResponse): Map<number, string> {
+  const latest = new Map<number, { d: string; name: string }>();
+  fd.networkTrend.forEach((r) => {
+    if (!r.asn) return;
+    const cur = latest.get(r.asn);
+    if (!cur || r.snapshotDate > cur.d) latest.set(r.asn, { d: r.snapshotDate, name: r.networkName });
+  });
+  return new Map(Array.from(latest, ([asn, v]) => [asn, v.name]));
+}
+
+export interface NetMove {
+  asn: number;
+  name: string;
+}
+
+export interface FacilityTractionRow {
+  facilityId: number;
+  name: string;
+  org: string;
+  metro: string;
+  isEquinix: boolean;
+  joined: NetMove[];
+  left: NetMove[];
+  atFrom: number;
+  atTo: number;
+}
+
+export interface NetworkExpansionRow {
+  asn: number;
+  name: string;
+  joined: FacilityTractionRow[];
+  left: FacilityTractionRow[];
+}
+
+export interface FacilityTraction {
+  available: boolean;
+  snaps: string[];
+  byFacility: Map<number, FacilityTractionRow>;
+  /** networks ranked by data centres entered in the period */
+  expanding: NetworkExpansionRow[];
+}
+
+export function facilityTraction(fd: TrendsResponse, from: number, to: number, asOf?: string): FacilityTraction {
+  const { snaps, bitFor } = presenceWindow(fd, asOf);
+  const byFacility = new Map<number, FacilityTractionRow>();
+  if (!fd.networkFacility || from < 0 || to >= snaps.length || from >= to) {
+    return { available: Boolean(fd.networkFacility), snaps, byFacility, expanding: [] };
+  }
+  const meta = latestFacilityRows(fd);
+  const names = networkNames(fd);
+  const bf = bitFor[from];
+  const bt = bitFor[to];
+  const nets = new Map<number, NetworkExpansionRow>();
+
+  for (const [asn, facilityId, mask] of fd.networkFacility) {
+    const m = meta.get(facilityId);
+    if (!m) continue;
+    const a = hasBit(mask, bf);
+    const b = hasBit(mask, bt);
+    if (!a && !b) continue;
+    let row = byFacility.get(facilityId);
+    if (!row) {
+      row = {
+        facilityId,
+        name: m.facilityName,
+        org: m.facilityOrgName || "",
+        metro: m.metro,
+        isEquinix: isEquinixFacilityOrg(m.facilityOrgName),
+        joined: [],
+        left: [],
+        atFrom: 0,
+        atTo: 0,
+      };
+      byFacility.set(facilityId, row);
+    }
+    if (a) row.atFrom += 1;
+    if (b) row.atTo += 1;
+    if (a === b) continue;
+    const move = { asn, name: names.get(asn) || `AS${asn}` };
+    (b ? row.joined : row.left).push(move);
+    let n = nets.get(asn);
+    if (!n) {
+      n = { asn, name: move.name, joined: [], left: [] };
+      nets.set(asn, n);
+    }
+    (b ? n.joined : n.left).push(row);
+  }
+
+  const byName = (x: NetMove, y: NetMove) => x.name.localeCompare(y.name);
+  byFacility.forEach((r) => {
+    r.joined.sort(byName);
+    r.left.sort(byName);
+  });
+  // route servers join every facility an exchange extends to — noise for "who is expanding"
+  const expanding = Array.from(nets.values())
+    .filter((n) => n.joined.length > 0 && !isRouteServerName(n.name))
+    .sort((x, y) => y.joined.length - x.joined.length || x.left.length - y.left.length || x.name.localeCompare(y.name));
+  return { available: true, snaps, byFacility, expanding };
+}
+
+export interface FacilityMemberHistoryRow {
+  asn: number;
+  name: string;
+  present: boolean[];
+}
+
+/** Every network listed in one facility at any snapshot in the window. */
+export function facilityMemberHistory(
+  fd: TrendsResponse,
+  facilityId: number,
+  asOf?: string
+): { available: boolean; snaps: string[]; rows: FacilityMemberHistoryRow[] } {
+  const { snaps, bitFor } = presenceWindow(fd, asOf);
+  if (!fd.networkFacility) return { available: false, snaps, rows: [] };
+  const names = networkNames(fd);
+  const rows: FacilityMemberHistoryRow[] = [];
+  for (const [asn, fid, mask] of fd.networkFacility) {
+    if (fid !== facilityId) continue;
+    const present = bitFor.map((b) => hasBit(mask, b));
+    if (present.some(Boolean)) rows.push({ asn, name: names.get(asn) || `AS${asn}`, present });
+  }
+  rows.sort((x, y) => x.name.localeCompare(y.name));
+  return { available: true, snaps, rows };
+}

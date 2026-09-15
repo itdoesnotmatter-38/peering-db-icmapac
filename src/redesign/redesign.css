@@ -1449,3 +1449,52 @@ a.rd-facchip.eqx:hover { color: var(--equinix); box-shadow: inset 0 0 0 1px var(
 @media (max-width: 1100px) {
   .rd-movegrid { grid-template-columns: repeat(2, 1fr); }
 }
+
+/* month-by-month joins / exits strip inside a movement card */
+.rd-stepstrip { display: flex; flex-wrap: wrap; gap: 4px; padding: 4px 12px 11px; }
+.rd-stepstrip .st {
+  display: grid;
+  grid-template-columns: auto auto;
+  gap: 0 6px;
+  padding: 4px 7px;
+  border-radius: 7px;
+  background: var(--surface-2);
+  font-size: 11px;
+}
+.rd-stepstrip .st .m { grid-column: 1 / span 2; font-size: 9.5px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--faint); font-weight: 700; }
+.rd-stepstrip .st.out { opacity: 0.4; }
+.rd-linkbtn { background: none; border: 0; text-align: left; cursor: pointer; color: var(--accent); font-family: var(--ui); }
+.rd-movecard .row .dv:empty { display: none; }
+
+/* networks expanding into new data centres */
+.rd-expandrow {
+  display: grid;
+  grid-template-columns: minmax(200px, 280px) 44px 1fr;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+}
+.rd-expandrow:last-child { border-bottom: 0; }
+.rd-expandrow .nm { font-size: 13px; font-weight: 600; text-decoration: none; }
+.rd-expandrow .ct { font-weight: 700; font-size: 14px; text-align: right; }
+.rd-expandrow .facs { display: flex; flex-wrap: wrap; gap: 5px; align-items: center; }
+.rd-expandrow .facs .more { font-size: 11px; color: var(--faint); font-weight: 600; }
+a.rd-facchip.eqx { color: var(--equinix); border-color: color-mix(in srgb, var(--equinix) 40%, transparent); }
+
+/* listed-since column + fresh-join flag */
+.rd-amx.rd-move th.mo.since { color: var(--muted); }
+.rd-amx.compact td.cell.mv.since { font-weight: 500; font-size: 11.5px; color: var(--muted); background: var(--surface); white-space: nowrap; }
+.rd-amx.compact td.cell.mv.since.fresh { color: var(--present); font-weight: 700; background: var(--present-bg); }
+.rd-newtag {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-size: 9.5px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  color: #fff;
+  background: var(--present);
+  vertical-align: 2px;
+}

@@ -325,3 +325,41 @@ export function LoadError({ message, onRetry }: { message: string; onRetry: () =
     </div>
   );
 }
+
+/* Period selector for movement-over-time views: dual range over snapshot
+   detents, preset chips, and an optional right-hand summary. */
+export function PeriodBar({
+  labels,
+  from,
+  to,
+  onChange,
+  presets,
+  children,
+}: {
+  labels: string[];
+  from: number;
+  to: number;
+  onChange: (from: number, to: number) => void;
+  presets: Array<{ label: string; onClick: () => void; active?: boolean }>;
+  children?: React.ReactNode;
+}) {
+  return (
+    <div className="rd-slider-bar" style={{ alignItems: "center", gap: 16 }}>
+      <div className="rd-period" style={{ minWidth: 280, flex: 1, maxWidth: 460 }}>
+        <span className="rd-eyebrow">
+          Period · <b style={{ color: "var(--text)" }}>{labels[from]} → {labels[to]}</b>
+        </span>
+        <DualRange count={labels.length} from={from} to={to} onChange={onChange} />
+      </div>
+      <div className="rd-chips" style={{ marginBottom: 0 }}>
+        {presets.map((p) => (
+          <button key={p.label} className={`rd-chip${p.active ? " on" : ""}`} onClick={p.onClick}>
+            {p.label}
+          </button>
+        ))}
+      </div>
+      <div className="rd-grow" />
+      {children}
+    </div>
+  );
+}

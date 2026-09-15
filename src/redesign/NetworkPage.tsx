@@ -679,6 +679,7 @@ export default function NetworkPage() {
                         {histCols[i]}
                       </th>
                     ))}
+                    <th className="mo since">Listed since</th>
                     <th className="mo net">Δ period</th>
                   </tr>
                 </thead>
@@ -696,6 +697,7 @@ export default function NetworkPage() {
                           >
                             {r.name.length > 28 ? `${r.name.slice(0, 27)}…` : r.name}
                           </Link>
+                          {r.present.indexOf(true) === r.present.length - 1 ? <span className="rd-newtag">NEW</span> : null}
                           <span className="sub">
                             {r.metro}
                             {r.isEquinix ? "" : r.org ? ` · ${r.org.length > 22 ? `${r.org.slice(0, 21)}…` : r.org}` : ""}
@@ -714,6 +716,22 @@ export default function NetworkPage() {
                             </td>
                           );
                         })}
+                        {(() => {
+                          const first = r.present.indexOf(true);
+                          const last = r.present.length - 1;
+                          return (
+                            <td
+                              className={`cell mv since${first === last ? " fresh" : ""}`}
+                              title={
+                                first === 0
+                                  ? `Listed in the earliest stored snapshot (${facHist.snaps[0]}) — may be earlier`
+                                  : `First listed in the ${facHist.snaps[first]} snapshot`
+                              }
+                            >
+                              {first === 0 ? `≤ ${histCols[0]}` : first === last ? `NEW · ${histCols[last]}` : histCols[first]}
+                            </td>
+                          );
+                        })()}
                         <td className={`cell mv net ${!a && b ? "up" : a && !b ? "down" : "same"}`}>
                           {!a && b ? "added" : a && !b ? "exited" : "·"}
                         </td>
@@ -730,6 +748,7 @@ export default function NetworkPage() {
                         {facHistRows.filter((r) => r.present[i]).length}
                       </td>
                     ))}
+                    <td className="cell mv since" />
                     <td
                       className={`cell mv net ${
                         facMoves.atTo > facMoves.atFrom ? "up" : facMoves.atTo < facMoves.atFrom ? "down" : "same"
@@ -751,7 +770,7 @@ export default function NetworkPage() {
           <div className="rd-footnote" style={{ marginBottom: 22 }}>
             Each column is a monthly snapshot; ✓ means {p.name} was listed in that data centre. An outlined ✓ marks the
             month it first appeared and <b>left</b> the month it disappeared. PeeringDB records no capacity at facilities,
-            so this tracks presence only — there's no upgrade or downgrade here. It's built from the stored snapshots,
+            so this tracks presence only — there's no upgrade or downgrade here. <b>Listed since</b> is the first snapshot the network appears in that data centre (≤ the earliest month means it was already there when history begins); <b>NEW</b> marks a listing that first appeared in the latest snapshot. It's built from the stored snapshots,
             unlike the live data-centre matrix further down, and uses the same period as the exchange view above.
           </div>
         </>
