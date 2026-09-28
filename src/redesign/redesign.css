@@ -1498,3 +1498,18 @@ a.rd-facchip.eqx { color: var(--equinix); border-color: color-mix(in srgb, var(-
   background: var(--present);
   vertical-align: 2px;
 }
+
+/* movement matrices: name the network in the corner cell, and separate metros */
+.rd-amx.rd-move th.who { line-height: 1.25; }
+.rd-amx.rd-move th.who .sub {
+  display: block;
+  margin-top: 2px;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--accent);
+}
+.rd-amx.rd-move tbody tr.metro-start > td { border-top: 2px solid var(--border-strong); }
+.rd-amx.rd-move tbody tr.metro-start > td.who { box-shadow: inset 3px 0 0 var(--accent); }
+.rd-h2sub { font-weight: 500; color: var(--muted); font-size: 0.82em; }

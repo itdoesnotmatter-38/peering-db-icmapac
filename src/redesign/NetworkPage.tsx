@@ -453,7 +453,9 @@ export default function NetworkPage() {
 
       {/* per-exchange capacity movement across every snapshot */}
       <div className="rd-sec-head">
-        <h2>Capacity movement across exchanges — {scopeName}</h2>
+        <h2>
+          {p.name} <span className="rd-h2sub">· capacity movement across exchanges · {scopeName}</span>
+        </h2>
         <span className="note rd-num">
           whole window: ↑{histCounts.up} up · ↓{histCounts.down} down · +{histCounts.joined} added · −{histCounts.left} dropped
         </span>
@@ -524,7 +526,12 @@ export default function NetworkPage() {
           <table className="rd-amx compact rd-move">
             <thead>
               <tr>
-                <th className="who">Exchange</th>
+                <th className="who">
+                  Exchange
+                  <span className="sub">
+                    {p.name} · AS{p.asn}
+                  </span>
+                </th>
                 {hist.snaps.map((sd, i) => (
                   <th key={sd} className={`mo${i >= period[0] && i <= period[1] ? " in" : " out"}`}>
                     {histCols[i]}
@@ -534,8 +541,8 @@ export default function NetworkPage() {
               </tr>
             </thead>
             <tbody>
-              {histRows.map((r) => (
-                <tr key={r.ixId}>
+              {histRows.map((r, ri) => (
+                <tr key={r.ixId} className={ri > 0 && histRows[ri - 1].metro !== r.metro ? "metro-start" : undefined}>
                   <td className="who">
                     <Link to={{ pathname: `/exchange/${r.ixId}`, search }} className="nm rd-netlink" style={r.isEquinix ? { color: "var(--equinix)" } : undefined}>
                       {r.ixName.length > 26 ? `${r.ixName.slice(0, 25)}…` : r.ixName}
@@ -585,7 +592,7 @@ export default function NetworkPage() {
               <tr className="tot">
                 <td className="who">
                   <span className="nm">All exchanges</span>
-                  <span className="sub">{scopeName}</span>
+                  <span className="sub">{p.name} · {scopeName}</span>
                 </td>
                 {hist.snaps.map((_, i) => (
                   <td key={i} className={`cell mv same${i >= period[0] && i <= period[1] ? "" : " out"}`}>
@@ -612,7 +619,9 @@ export default function NetworkPage() {
 
       {/* data-centre movement — presence only, follows the same period */}
       <div className="rd-sec-head">
-        <h2>Data-centre movement — {scopeName}</h2>
+        <h2>
+          {p.name} <span className="rd-h2sub">· data-centre movement · {scopeName}</span>
+        </h2>
         <span className="note">
           Snapshot-based · {histCols[period[0]]} → {histCols[period[1]]} · presence only
         </span>
@@ -673,7 +682,12 @@ export default function NetworkPage() {
               <table className="rd-amx compact rd-move">
                 <thead>
                   <tr>
-                    <th className="who">Data centre</th>
+                    <th className="who">
+                      Data centre
+                      <span className="sub">
+                        {p.name} · AS{p.asn}
+                      </span>
+                    </th>
                     {facHist.snaps.map((sd, i) => (
                       <th key={sd} className={`mo${i >= period[0] && i <= period[1] ? " in" : " out"}`}>
                         {histCols[i]}
@@ -684,11 +698,11 @@ export default function NetworkPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {facHistRows.map((r) => {
+                  {facHistRows.map((r, ri) => {
                     const a = r.present[period[0]];
                     const b = r.present[period[1]];
                     return (
-                      <tr key={r.facilityId}>
+                      <tr key={r.facilityId} className={ri > 0 && facHistRows[ri - 1].metro !== r.metro ? "metro-start" : undefined}>
                         <td className="who">
                           <Link
                             to={{ pathname: `/fac/${r.facilityId}`, search }}
@@ -741,7 +755,7 @@ export default function NetworkPage() {
                   <tr className="tot">
                     <td className="who">
                       <span className="nm">Data centres listed</span>
-                      <span className="sub">{scopeName}</span>
+                      <span className="sub">{p.name} · {scopeName}</span>
                     </td>
                     {facHist.snaps.map((_, i) => (
                       <td key={i} className={`cell mv same${i >= period[0] && i <= period[1] ? "" : " out"}`}>

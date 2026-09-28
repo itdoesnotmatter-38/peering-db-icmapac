@@ -2173,8 +2173,17 @@ export function networkPortHistory(fd: TrendsResponse, asn: number, asOf?: strin
   });
 
   const totalsG = snaps.map((_, i) => rows.reduce((acc, r) => acc + r.perSnapG[i], 0));
+  /* group by metro — biggest market first, biggest port first inside it — so a
+     reader scans one market at a time rather than metros interleaved by size */
+  const metroWeight = new Map<string, number>();
+  rows.forEach((r) => metroWeight.set(r.metro, (metroWeight.get(r.metro) || 0) + r.perSnapG[li]));
   rows.sort(
-    (a, b) => Number(b.active) - Number(a.active) || b.perSnapG[li] - a.perSnapG[li] || Math.abs(b.netChangeG) - Math.abs(a.netChangeG)
+    (a, b) =>
+      (metroWeight.get(b.metro) || 0) - (metroWeight.get(a.metro) || 0) ||
+      a.metro.localeCompare(b.metro) ||
+      Number(b.active) - Number(a.active) ||
+      b.perSnapG[li] - a.perSnapG[li] ||
+      Math.abs(b.netChangeG) - Math.abs(a.netChangeG)
   );
   return { snaps, rows, totalsG, counts };
 }
@@ -2229,10 +2238,13 @@ export function networkFacilityHistory(fd: TrendsResponse, asn: number, asOf?: s
     });
   }
   const li = snaps.length - 1;
+  const metroWeight = new Map<string, number>();
+  rows.forEach((r) => metroWeight.set(r.metro, (metroWeight.get(r.metro) || 0) + (r.present[li] ? 1 : 0)));
   rows.sort(
     (x, y) =>
-      Number(y.present[li]) - Number(x.present[li]) ||
+      (metroWeight.get(y.metro) || 0) - (metroWeight.get(x.metro) || 0) ||
       x.metro.localeCompare(y.metro) ||
+      Number(y.present[li]) - Number(x.present[li]) ||
       Number(y.isEquinix) - Number(x.isEquinix) ||
       x.name.localeCompare(y.name)
   );
