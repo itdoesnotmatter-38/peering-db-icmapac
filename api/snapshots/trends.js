@@ -363,7 +363,12 @@ module.exports = async (req, res) => {
       usableSnapshots.push(run.snapshotDate);
     }
 
-    res.setHeader("Cache-Control", "public, max-age=300, stale-while-revalidate=3600");
+    /* Vercel's CDN only caches a function response when it carries s-maxage;
+       with max-age alone every request re-ran this handler, re-downloading
+       ~58 MB of snapshot files from Blob and taking ~12s. Snapshot data only
+       changes once a month, and the client asks for ?v=<latest snapshot date>,
+       so a new month is a new cache key — this can be cached hard. */
+    res.setHeader("Cache-Control", "public, max-age=300, s-maxage=86400, stale-while-revalidate=604800");
     res.status(200).json({
       region: "APAC",
       metros: APAC_METROS,

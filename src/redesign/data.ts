@@ -81,9 +81,27 @@ export interface TrendsResponse {
 
 let trendsPromise: Promise<TrendsResponse> | null = null;
 
+/* The trends feed is expensive to build (it reads every stored snapshot) and
+   changes only when a new monthly snapshot lands. Ask for it by that date so
+   the CDN can cache it hard: same month = cache hit, new month = new key, no
+   purge needed. The lookup is a cheap database-only call; if it fails we just
+   request the feed unversioned. */
+async function latestSnapshotDate(): Promise<string | null> {
+  try {
+    const res = await fetch(withApiRoot("/api/snapshots/latest?limit=1"));
+    if (!res.ok) return null;
+    const body = await res.json();
+    const d = body?.latest?.snapshotDate;
+    return typeof d === "string" && /^\d{4}-\d{2}-\d{2}/.test(d) ? d.slice(0, 10) : null;
+  } catch {
+    return null;
+  }
+}
+
 export function loadTrends(): Promise<TrendsResponse> {
   if (!trendsPromise) {
-    trendsPromise = fetch(withApiRoot("/api/snapshots/trends"))
+    trendsPromise = latestSnapshotDate()
+      .then((v) => fetch(withApiRoot(`/api/snapshots/trends${v ? `?v=${v}` : ""}`)))
       .then(async (res) => {
         if (!res.ok) throw new Error(`Snapshot API error: HTTP ${res.status}`);
         return (await res.json()) as TrendsResponse;
