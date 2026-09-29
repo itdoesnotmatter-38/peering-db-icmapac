@@ -25,6 +25,28 @@
       Learn how to configure a non-root public URL by running `npm run build`.
     -->
     <title>PeeringDB Dashboard</title>
+    <script>
+      /* Every deploy renames the JS bundle and the old one 404s, so a browser
+         holding a stale copy of this page loads nothing and shows a blank
+         screen. Catch that failure and reload once to pick up fresh HTML. */
+      (function () {
+        window.addEventListener(
+          'error',
+          function (e) {
+            var t = e && e.target;
+            if (!t || t.tagName !== 'SCRIPT' || !/\/static\/js\//.test(t.src || '')) return;
+            try {
+              if (sessionStorage.getItem('pdb-asset-retry')) return;
+              sessionStorage.setItem('pdb-asset-retry', '1');
+            } catch (err) {
+              return;
+            }
+            location.reload();
+          },
+          true
+        );
+      })();
+    </script>
   </head>
   <body>
     <noscript>You need to enable JavaScript to run this app.</noscript>
