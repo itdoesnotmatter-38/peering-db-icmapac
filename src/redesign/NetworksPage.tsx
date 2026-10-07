@@ -2,7 +2,7 @@ import React, { useMemo, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { useSnapshot } from "./Shell";
 import { Panel, Sparkline } from "./bits";
-import { METRO_CODES, NetworkDirEntry, fmtMonth, networksDirectory, tokenMatch } from "./data";
+import { METRO_CODES, NetworkDirEntry, fmtMonth, networksDirectory, searchWithFallback } from "./data";
 
 /* Networks directory — every row is a fact sheet: trajectory sparkline,
    capacity, MoM change, Equinix share, footprint, anchor metro, and a NEW
@@ -24,12 +24,13 @@ export default function NetworksPage() {
 
   const all = useMemo(() => networksDirectory(scoped, latest), [scoped, latest]);
 
+  const netSearch = useMemo(() => searchWithFallback(all, q, (n) => n.name, (n) => n.asn), [all, q]);
   const filtered = useMemo(() => {
-    const base = q.trim() ? all.filter((n) => tokenMatch(q, n.name, n.asn)) : all;
+    const base = netSearch.rows;
     const val = (n: NetworkDirEntry) =>
       sort.key === "cap" ? n.capT : sort.key === "delta" ? n.dCapT : sort.key === "eqx" ? n.eqxPct : sort.key === "ports" ? n.ports : n.metros;
     return [...base].sort((a, b) => (sort.asc ? val(a) - val(b) : val(b) - val(a)));
-  }, [all, q, sort]);
+  }, [netSearch, sort]);
 
   const shown = filtered.slice(0, 60);
 
@@ -51,7 +52,11 @@ export default function NetworksPage() {
         </div>
         <div className="rd-grow" />
         <span className="note rd-num">
-          {q ? `${filtered.length} match` : `${all.length} networks`} · {scopeName}
+          {netSearch.closest ? (
+            <span className="rd-searchnote">
+              No name has all those words — closest for “{netSearch.closest}” · {filtered.length}
+            </span>
+          ) : q ? `${filtered.length} match` : `${all.length} networks`} · {scopeName}
         </span>
       </div>
 

@@ -3,7 +3,7 @@ import { Link, useLocation, useSearchParams } from "react-router-dom";
 import { fetchPeeringDb } from "../peeringdbApi";
 import { useSnapshot } from "./Shell";
 import { EntityTypeahead, Panel, PeriodBar, Sparkline } from "./bits";
-import { FacilityDirEntry, METRO_CODES, facilitiesDirectory, facilityTraction, fmtMonth, networksDirectory, tokenMatch } from "./data";
+import { FacilityDirEntry, METRO_CODES, facilitiesDirectory, facilityTraction, fmtMonth, networksDirectory, searchWithFallback } from "./data";
 import { usePeriod } from "./usePeriod";
 
 /* Facilities directory — the data-centre twin of the Exchanges directory:
@@ -160,8 +160,12 @@ export default function FacilitiesPage() {
     list.length ? list.slice(0, 15).map((x) => x.name).join(", ") + (list.length > 15 ? ` +${list.length - 15} more` : "") : "";
   const [showAllExpanding, setShowAllExpanding] = useState(false);
 
+  const netSearch = useMemo(
+    () => searchWithFallback(all, q, (f) => `${f.name} ${f.org} ${f.metro}`, (f) => f.facilityId),
+    [all, q]
+  );
   const filtered = useMemo(() => {
-    const base = q.trim() ? all.filter((f) => tokenMatch(q, `${f.name} ${f.org} ${f.metro}`, f.facilityId)) : all;
+    const base = netSearch.rows;
     const val = (f: FacilityDirEntry) =>
       sort.key === "nets"
         ? f.nets
@@ -174,7 +178,7 @@ export default function FacilitiesPage() {
         : -f.metroRank;
     return [...base].sort((a, b) => (sort.asc ? val(a) - val(b) : val(b) - val(a)));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [all, q, sort, traction]);
+  }, [netSearch, sort, traction]);
 
   const Head = ({ k, label }: { k: SortKey; label: string }) => (
     <button className={`sort${sort.key === k ? " on" : ""}`} onClick={() => setSort((s) => ({ key: k, asc: s.key === k ? !s.asc : false }))}>
@@ -264,7 +268,11 @@ export default function FacilitiesPage() {
         ) : null}
         <div className="rd-grow" />
         <span className="note rd-num">
-          {q ? `${filtered.length} match` : `${all.length} data centres`} · {scopeName}
+          {netSearch.closest ? (
+            <span className="rd-searchnote">
+              No name has all those words — closest for “{netSearch.closest}” · {filtered.length}
+            </span>
+          ) : q ? `${filtered.length} match` : `${all.length} data centres`} · {scopeName}
         </span>
       </div>
 

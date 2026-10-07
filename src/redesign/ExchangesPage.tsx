@@ -2,7 +2,7 @@ import React, { useMemo, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { useSnapshot } from "./Shell";
 import { Panel, Sparkline, useTooltip } from "./bits";
-import { ExchangeRank, IxContributor, exchangeMovers, exchangesRanking, fmtMonth, tokenMatch } from "./data";
+import { ExchangeRank, IxContributor, exchangeMovers, exchangesRanking, fmtMonth, searchWithFallback } from "./data";
 
 /* Exchanges directory — fact columns instead of a decorative bar:
    trajectory, capacity, MoM capacity change, MoM member change, and
@@ -102,8 +102,9 @@ export default function ExchangesPage() {
   }, [all]);
   const { bind, node: tipNode } = useTooltip();
 
+  const netSearch = useMemo(() => searchWithFallback(all, q, (x) => `${x.name} ${x.metro}`, (x) => x.ixId), [all, q]);
   const filtered = useMemo(() => {
-    const base = q.trim() ? all.filter((x) => tokenMatch(q, `${x.name} ${x.metro}`, x.ixId)) : all;
+    const base = netSearch.rows;
     const val = (x: ExchangeRank) =>
       sort.key === "cap"
         ? x.capT
@@ -119,7 +120,7 @@ export default function ExchangesPage() {
         ? x.dSharePP
         : x.nets;
     return [...base].sort((a, b) => (sort.asc ? val(a) - val(b) : val(b) - val(a)));
-  }, [all, q, sort]);
+  }, [netSearch, sort]);
 
   const Head = ({ k, label }: { k: SortKey; label: string }) => (
     <button className={`sort${sort.key === k ? " on" : ""}`} onClick={() => setSort((s) => ({ key: k, asc: s.key === k ? !s.asc : false }))}>
@@ -139,7 +140,11 @@ export default function ExchangesPage() {
         </div>
         <div className="rd-grow" />
         <span className="note rd-num">
-          {q ? `${filtered.length} match` : `${all.length} exchanges`} · {scopeName}
+          {netSearch.closest ? (
+            <span className="rd-searchnote">
+              No name has all those words — closest for “{netSearch.closest}” · {filtered.length}
+            </span>
+          ) : q ? `${filtered.length} match` : `${all.length} exchanges`} · {scopeName}
         </span>
       </div>
 

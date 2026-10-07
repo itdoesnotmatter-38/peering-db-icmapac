@@ -2,7 +2,7 @@ import React, { useMemo, useState } from "react";
 import { Link, useLocation, useSearchParams } from "react-router-dom";
 import { useSnapshot } from "./Shell";
 import { DualRange, Kpi, useTooltip } from "./bits";
-import { METRO_CODES, ShiftStatus, fmtDayMonth, marketChanges, movementHeatmap, shiftColumns, tokenMatch } from "./data";
+import { METRO_CODES, ShiftStatus, fmtDayMonth, marketChanges, movementHeatmap, shiftColumns, searchWithFallback } from "./data";
 
 /* Market changes — one page, two layers:
    (1) the where/when heatmap (metros × months of net change), a selector —
@@ -107,13 +107,13 @@ export default function ChangesPage() {
     return c.dNets === 0 ? "·" : `${c.dNets > 0 ? "+" : "−"}${Math.abs(c.dNets)}`;
   };
 
-  const filtered = useMemo(() => {
-    const rows = mc.networks
+  const netSearch = useMemo(() => {
+    const pool = mc.networks
       .filter((n) => (filter === "all" ? true : n.status === filter))
-      .filter((n) => (focus ? n.metro === focus : true))
-      .filter((n) => tokenMatch(q, n.name, n.asn));
-    return rows.slice(0, 16);
+      .filter((n) => (focus ? n.metro === focus : true));
+    return searchWithFallback(pool, q, (n) => n.name, (n) => n.asn);
   }, [mc, filter, focus, q]);
+  const filtered = useMemo(() => netSearch.rows.slice(0, 16), [netSearch]);
 
   const columns = useMemo(() => shiftColumns(filtered, 10), [filtered]);
   const maxAbs = useMemo(() => Math.max(1, ...filtered.flatMap((n) => n.cells.map((c) => Math.abs(c.changeG)))), [filtered]);
@@ -177,8 +177,11 @@ export default function ChangesPage() {
             <circle cx="11" cy="11" r="7" />
             <path d="m20 20-3-3" />
           </svg>
-          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Filter networks…" aria-label="Filter networks" />
+          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Filter networks — comma for several…" aria-label="Filter networks" />
         </div>
+        {netSearch.closest ? (
+          <span className="rd-searchnote">No name has all those words — closest for “{netSearch.closest}”</span>
+        ) : null}
         <div className="rd-grow" />
         {focus ? (
           <button className="rd-chip on" onClick={() => setFocus(null)} title="Clear metro focus">

@@ -1,5 +1,5 @@
 import React, { useCallback, useState } from "react";
-import { tokenMatch, searchTerms } from "./data";
+import { tokenMatch, searchTerms, searchWithFallback } from "./data";
 
 /* One shared, mouse-following tooltip for heatmap cells. Render `node`
    once at the page root; spread `bind(content)` onto each hoverable cell. */
@@ -159,19 +159,10 @@ export function EntityTypeahead({
      most distinctive single word — the one with the fewest hits — so
      "akamai network" offers Akamai rather than every name with "network". */
   const { matches, closest } = React.useMemo(() => {
-    const s = q.trim();
-    if (!s) return { matches: [] as TypeaheadOption[], closest: null as string | null };
+    if (!q.trim()) return { matches: [] as TypeaheadOption[], closest: null as string | null };
     const pool = options.filter((o) => !exclude?.has(o.id));
-    const exact = pool.filter((o) => tokenMatch(s, hay(o), o.id));
-    if (exact.length) return { matches: exact.slice(0, 8), closest: null };
-    const terms = searchTerms(s);
-    const words = terms.length === 1 ? terms[0].split(" ").filter((w) => w.length >= 2) : [];
-    let best: { w: string; m: TypeaheadOption[] } | null = null;
-    for (const w of words) {
-      const m = pool.filter((o) => tokenMatch(w, hay(o), o.id));
-      if (m.length && (!best || m.length < best.m.length)) best = { w, m };
-    }
-    return best ? { matches: best.m.slice(0, 8), closest: best.w } : { matches: [], closest: null };
+    const r = searchWithFallback(pool, q, hay, (o) => o.id);
+    return { matches: r.rows.slice(0, 8), closest: r.closest };
   }, [q, options, exclude, hay]);
 
   const pick = (id: number) => {

@@ -192,6 +192,30 @@ export function tokenMatch(query: string, haystack: string, id?: number | string
   return terms.some((term) => term.split(" ").every(hit));
 }
 
+/** Filter with tokenMatch; if nothing matches every word of a multi-word
+    search, fall back to its most distinctive word (fewest hits) and report
+    which word was used, so "akamai network" shows Akamai rather than
+    nothing — or, as before this change, every "network". */
+export function searchWithFallback<T>(
+  items: T[],
+  query: string,
+  hay: (t: T) => string,
+  id?: (t: T) => number | string
+): { rows: T[]; closest: string | null } {
+  const q = query.trim();
+  if (!q) return { rows: items, closest: null };
+  const exact = items.filter((t) => tokenMatch(q, hay(t), id?.(t)));
+  if (exact.length) return { rows: exact, closest: null };
+  const terms = searchTerms(q);
+  const words = terms.length === 1 ? terms[0].split(" ").filter((w) => w.length >= 2) : [];
+  let best: { rows: T[]; closest: string } | null = null;
+  for (const w of words) {
+    const m = items.filter((t) => tokenMatch(w, hay(t), id?.(t)));
+    if (m.length && (!best || m.length < best.rows.length)) best = { rows: m, closest: w };
+  }
+  return best || { rows: [], closest: null };
+}
+
 const ASN_WORD = /^(as)?\d+$/;
 
 /** Split a search box into separate searches. Commas separate searches;

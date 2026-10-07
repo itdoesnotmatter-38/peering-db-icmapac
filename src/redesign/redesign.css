@@ -1522,3 +1522,4 @@ a.rd-facchip.eqx { color: var(--equinix); border-color: color-mix(in srgb, var(-
   background: var(--surface-2);
   border-bottom: 1px solid var(--border);
 }
+.rd-searchnote { color: var(--watch); font-size: 12px; font-weight: 600; }
