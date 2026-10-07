@@ -47,7 +47,7 @@ export default function NetworksPage() {
             <circle cx="11" cy="11" r="7" />
             <path d="m20 20-3-3" />
           </svg>
-          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search networks — names or ASNs, several at once…" aria-label="Search networks" />
+          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search networks — names or ASNs; comma for several…" aria-label="Search networks" />
         </div>
         <div className="rd-grow" />
         <span className="note rd-num">

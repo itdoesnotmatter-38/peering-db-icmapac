@@ -1,5 +1,5 @@
 import React, { useCallback, useState } from "react";
-import { tokenMatch } from "./data";
+import { tokenMatch, searchTerms } from "./data";
 
 /* One shared, mouse-following tooltip for heatmap cells. Render `node`
    once at the page root; spread `bind(content)` onto each hoverable cell. */
@@ -133,10 +133,10 @@ export interface TypeaheadOption {
   extra?: string;
 }
 
-/* Generic multi-term type-ahead. "akamai fastly 13335" OR-matches the
-   suggestions, and Enter adds the best match for EVERY term at once
-   (via onPickMany when provided). numericFallback lets a raw number
-   with no match fall through as an id (used for ASNs). */
+/* Generic type-ahead. Words narrow ("akamai tech"); commas separate
+   several searches ("akamai, fastly, 13335") and Enter adds the best match
+   for EVERY search at once (via onPickMany when provided). numericFallback
+   lets a raw number with no match fall through as an id (used for ASNs). */
 export function EntityTypeahead({
   options,
   onPick,
@@ -155,13 +155,23 @@ export function EntityTypeahead({
   const [q, setQ] = useState("");
   const [open, setOpen] = useState(false);
   const hay = useCallback((o: TypeaheadOption) => `${o.name} ${o.extra || ""}`, []);
-  const matches = React.useMemo(() => {
+  /* Words narrow the list. If no name contains every word, fall back to the
+     most distinctive single word — the one with the fewest hits — so
+     "akamai network" offers Akamai rather than every name with "network". */
+  const { matches, closest } = React.useMemo(() => {
     const s = q.trim();
-    if (!s) return [];
-    return options
-      .filter((o) => !exclude?.has(o.id))
-      .filter((o) => tokenMatch(s, hay(o), o.id))
-      .slice(0, 8);
+    if (!s) return { matches: [] as TypeaheadOption[], closest: null as string | null };
+    const pool = options.filter((o) => !exclude?.has(o.id));
+    const exact = pool.filter((o) => tokenMatch(s, hay(o), o.id));
+    if (exact.length) return { matches: exact.slice(0, 8), closest: null };
+    const terms = searchTerms(s);
+    const words = terms.length === 1 ? terms[0].split(" ").filter((w) => w.length >= 2) : [];
+    let best: { w: string; m: TypeaheadOption[] } | null = null;
+    for (const w of words) {
+      const m = pool.filter((o) => tokenMatch(w, hay(o), o.id));
+      if (m.length && (!best || m.length < best.m.length)) best = { w, m };
+    }
+    return best ? { matches: best.m.slice(0, 8), closest: best.w } : { matches: [], closest: null };
   }, [q, options, exclude, hay]);
 
   const pick = (id: number) => {
@@ -172,7 +182,7 @@ export function EntityTypeahead({
 
   // Enter with several terms: best (largest) match per term, added together
   const pickFromQuery = () => {
-    const tokens = q.toLowerCase().split(/[\s,]+/).filter(Boolean);
+    const tokens = searchTerms(q);
     if (!tokens.length) return;
     if (tokens.length === 1) {
       if (matches.length) pick(matches[0].id);
@@ -220,8 +230,20 @@ export function EntityTypeahead({
           }}
         />
       </div>
+      {open && q.trim().length >= 2 && !matches.length ? (
+        <div className="rd-ta-pop">
+          <div className="rd-ta-note">
+            No match for “{q.trim()}”. Every word has to appear in the name — separate several names with commas.
+          </div>
+        </div>
+      ) : null}
       {open && matches.length ? (
         <div className="rd-ta-pop">
+          {closest ? (
+            <div className="rd-ta-note">
+              No name has all of those words — closest matches for “{closest}”
+            </div>
+          ) : null}
           {matches.map((m) => (
             <div key={m.id} className="rd-ta-row" onMouseDown={() => pick(m.id)}>
               <span className="nm">{m.name}</span>

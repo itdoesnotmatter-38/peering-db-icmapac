@@ -1513,3 +1513,12 @@ a.rd-facchip.eqx { color: var(--equinix); border-color: color-mix(in srgb, var(-
 .rd-amx.rd-move tbody tr.metro-start > td { border-top: 2px solid var(--border-strong); }
 .rd-amx.rd-move tbody tr.metro-start > td.who { box-shadow: inset 3px 0 0 var(--accent); }
 .rd-h2sub { font-weight: 500; color: var(--muted); font-size: 0.82em; }
+
+/* type-ahead: explain an empty or fallback result instead of just closing */
+.rd-ta-note {
+  padding: 8px 11px;
+  font-size: 11.5px;
+  color: var(--muted);
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--border);
+}

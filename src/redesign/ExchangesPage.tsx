@@ -135,7 +135,7 @@ export default function ExchangesPage() {
             <circle cx="11" cy="11" r="7" />
             <path d="m20 20-3-3" />
           </svg>
-          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search exchanges — names or metros, several at once…" aria-label="Search exchanges" />
+          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search exchanges — names or metros; comma for several…" aria-label="Search exchanges" />
         </div>
         <div className="rd-grow" />
         <span className="note rd-num">

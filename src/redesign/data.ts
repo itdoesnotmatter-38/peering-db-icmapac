@@ -175,15 +175,41 @@ export function filterByMetros(d: TrendsResponse, metros: string[] | null): Tren
 
 /* ---------------- shared helpers ---------------- */
 
-/** Multi-term OR matching: "akamai fastly 13335" hits a row when ANY
-    space/comma-separated token matches the haystack or the ASN/id.
-    An empty query matches everything. */
+/** Search matching. Separate several searches with commas
+    ("akamai, fastly, 13335"); words within one search must all appear, so
+    typing more narrows the list. An empty query matches everything. */
 export function tokenMatch(query: string, haystack: string, id?: number | string): boolean {
-  const tokens = query.toLowerCase().split(/[\s,]+/).filter(Boolean);
-  if (!tokens.length) return true;
+  const terms = searchTerms(query);
+  if (!terms.length) return true;
   const h = (haystack || "").toLowerCase();
   const a = id !== undefined && id !== null ? String(id) : "";
-  return tokens.some((t) => h.includes(t) || (a && a.includes(t.replace(/^as/, ""))));
+  const hit = (w: string) => {
+    if (h.includes(w)) return true;
+    const n = w.replace(/^as/, "");
+    return a !== "" && /^\d+$/.test(n) && a.includes(n);
+  };
+  // a term matches when ALL its words appear; the query matches when ANY term does
+  return terms.some((term) => term.split(" ").every(hit));
+}
+
+const ASN_WORD = /^(as)?\d+$/;
+
+/** Split a search box into separate searches. Commas separate searches;
+    spaces inside one search narrow it, so "akamai tech" means a name
+    containing both words rather than either. A run of bare ASNs
+    ("13335 54113") is still read as a list. */
+export function searchTerms(query: string): string[] {
+  const out: string[] = [];
+  query
+    .toLowerCase()
+    .split(",")
+    .forEach((part) => {
+      const words = part.split(/\s+/).filter(Boolean);
+      if (!words.length) return;
+      if (words.length > 1 && words.every((w) => ASN_WORD.test(w))) out.push(...words);
+      else out.push(words.join(" "));
+    });
+  return out;
 }
 
 export const isEquinixIx = (name: string | null | undefined) =>
